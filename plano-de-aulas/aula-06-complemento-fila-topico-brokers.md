@@ -1,6 +1,6 @@
 # Complemento — Fila × tópico, brokers e garantias: fechando o gap da Aula 5
 
-> **Tempo de leitura:** ~14 min. Leitura pós-aula. Na Aula 5 apareceram cinco perguntas que não são dúvidas soltas — são a **mesma dúvida vista de cinco ângulos**: *o que exatamente diferencia um broker de fila de um broker de log, e o que é natureza da ferramenta versus escolha de configuração?* As respostas já estavam espalhadas pelas Aulas 5, 6 e 7; este documento as coloca **frente a frente**, que é onde o entendimento trava. Boa parte de vocês já tinha a intuição certa em produção — aqui o objetivo é dar o **nome** e o **porquê** ao que vocês já fazem.
+> **Tempo de leitura:** ~18 min. Leitura pós-aula. Na Aula 5 apareceram cinco perguntas que não são dúvidas soltas — são a **mesma dúvida vista de cinco ângulos**: *o que exatamente diferencia um broker de fila de um broker de log, e o que é natureza da ferramenta versus escolha de configuração?* As respostas já estavam espalhadas pelas Aulas 5, 6 e 7; este documento as coloca **frente a frente**, que é onde o entendimento trava. Boa parte de vocês já tinha a intuição certa em produção — aqui o objetivo é dar o **nome** e o **porquê** ao que vocês já fazem.
 
 ---
 
@@ -111,7 +111,73 @@ A fila de sucesso é mais interessante, porque pode ser **uma de duas coisas** b
 
 ---
 
-## 5. Tabela-síntese: o vocabulário alinhado
+## 5. Fila durável e mensagem persistente: desmontando o mito no nível do disco
+
+A §3 respondeu *por que* "fila perde mensagem" é meia-verdade. Falta o **como** — o mecanismo físico que faz uma fila RabbitMQ sobreviver a uma queda do broker exatamente como o Kafka sobrevive. Sem esse "como" concreto, o mito volta na próxima discussão de arquitetura, porque "confia, é configuração" não convence ninguém tão bem quanto ver as peças se encaixando. Então vamos abrir a caixa.
+
+### O cenário que assombra: "e se o broker cair com mensagem dentro?"
+
+É esse o medo real por trás de "Rabbit perde mensagem". Imagine: o produtor publicou `comprovante.gravar`, a mensagem está na fila, **ninguém consumiu ainda** — e o servidor do RabbitMQ reinicia (deploy, crash, queda de energia). A mensagem sobrevive?
+
+A resposta depende de **duas** decisões independentes, que precisam estar **ambas** ligadas. Elas não são a mesma coisa, e confundi-las é a origem de metade dos "perdi mensagem no Rabbit":
+
+1. **A fila é durável?** (`durable=true`) — sem isso, a *própria fila* deixa de existir no restart. Fila não-durável é uma estrutura só-em-memória: o broker sobe limpo, sem ela. Não importa o que havia dentro; o continente sumiu junto com o conteúdo.
+2. **A mensagem é persistente?** (`deliveryMode=2`) — mesmo numa fila durável, uma mensagem *transiente* vive só em RAM. A fila volta no restart, mas volta **vazia**, porque aquela mensagem nunca foi ao disco.
+
+> **A distinção que trava na cabeça de todo mundo:** durabilidade é propriedade da **fila** (o continente); persistência é propriedade da **mensagem** (o conteúdo). Uma fila durável com mensagem transiente = a prateleira sobrevive, o que estava nela não. Uma fila não-durável com mensagem persistente = você mandou gravar no disco algo cujo endereço some no restart. **Só a combinação das duas** — fila durável **e** mensagem persistente — faz a mensagem atravessar a queda do broker. É por isso que "liguei durable e ainda perdi" é uma queixa comum: metade da configuração feita é configuração nenhuma.
+
+### Como isso aparece no código Java (Spring AMQP)
+
+No mundo Spring que vocês estão usando, as duas peças ficam assim — e o detalhe que engana é que **o Spring já entrega os dois defaults do lado seguro**, o que reforça a ideia de que "é natural do Rabbit". Não é natural: é default bom.
+
+```java
+@Configuration
+public class RabbitConfig {
+
+    // 1) Fila DURÁVEL — o "true" é a durabilidade. Sobrevive ao restart do broker.
+    @Bean
+    Queue comprovanteQueue() {
+        return new Queue("comprovante.gravar.q", /* durable */ true);
+    }
+}
+```
+
+```java
+// 2) Mensagem PERSISTENTE — deliveryMode = PERSISTENT (grava em disco).
+//    Com RabbitTemplate, este é o DEFAULT do Spring. Para deixar EXPLÍCITO:
+rabbitTemplate.convertAndSend("comprovante.gravar.q", payload, message -> {
+    message.getMessageProperties()
+           .setDeliveryMode(MessageDeliveryMode.PERSISTENT); // deliveryMode = 2
+    return message;
+});
+```
+
+O que muda no disco: com `PERSISTENT`, o broker grava a mensagem no seu *message store* em disco **antes** de considerá-la enfileirada. No restart, ele relê o store e reconstrói a fila com as mensagens dentro. Com `NON_PERSISTENT` (deliveryMode=1), a mensagem nunca toca o disco — é mais rápida, e some no primeiro soluço do broker. É a mesma troca throughput × durabilidade que existe em *qualquer* sistema de mensageria, Kafka incluído.
+
+### As quatro peças, agora completas
+
+A §3 listou as quatro peças do at-least-once. Agora dá para ver que elas cobrem **momentos diferentes** da vida da mensagem — e que "durável + persistente" só protege o **meio do caminho**:
+
+| Peça | Protege contra... | Momento |
+|---|---|---|
+| **Publisher confirm** | mensagem se perder **antes** de chegar ao broker | produtor → broker |
+| **Fila durável** | a **fila** sumir no restart do broker | dentro do broker |
+| **Mensagem persistente** | a **mensagem** sumir no restart do broker | dentro do broker |
+| **Ack manual** | mensagem se perder se o **consumidor** cair processando | broker → consumidor |
+
+Repare: durável e persistente juntas cobrem só a coluna "dentro do broker". Sozinhas, não bastam — se o produtor publica sem `confirm`, a mensagem se perde no cabo antes de chegar ao disco durável; se o consumidor usa auto-ack, o broker apaga a mensagem persistida antes do processamento terminar. **É o conjunto que dá a garantia**, e cada peça tapa um buraco que as outras não veem. Quem liga só `durable` e acha que está coberto está protegido contra restart do broker e desprotegido nas duas pontas.
+
+### O golpe final no mito
+
+Agora dá para afirmar com precisão de engenheiro, não de fé:
+
+> **"Kafka é mais seguro que RabbitMQ" é comparar um Kafka bem configurado com um RabbitMQ mal configurado.** O log do Kafka é durável *por padrão* porque **é** um log em disco — durabilidade é a natureza dele. No RabbitMQ, durabilidade é uma **escolha que você liga** — mas, uma vez ligada (fila durável + mensagem persistente + confirms + ack manual), a mensagem atravessa a queda do broker exatamente como no Kafka. A diferença nunca foi "um perde, o outro não". Foi "um te obriga a durar, o outro te deixa escolher não durar — e alguém escolheu errado e culpou a ferramenta".
+
+O que o Kafka realmente tem a mais continua sendo o da §3 — **replay, retenção, auditoria** —, e nada disso é "não perder mensagem". Não perder mensagem, os dois fazem. Um faz por natureza; o outro faz porque você configurou as quatro peças. O disco não sabe qual broker escreveu nele.
+
+---
+
+## 6. Tabela-síntese: o vocabulário alinhado
 
 Para consolidar, o mapa dos termos que se cruzaram na discussão — separados pelos níveis que a §2 introduziu, porque misturá-los é a origem da maioria das confusões:
 
@@ -131,7 +197,7 @@ Para consolidar, o mapa dos termos que se cruzaram na discussão — separados p
 
 ---
 
-## 6. Três frases para levar para a prova (e para a vida)
+## 7. Três frases para levar para a vida
 
 1. **"A mensagem é trabalho ou fato?"** — decide fila×tópico antes de decidir Rabbit×Kafka. A ferramenta vem depois da semântica, nunca antes.
 2. **"Perda de mensagem é configuração, não natureza."** — durável + persistente + confirms + ack manual dá at-least-once em qualquer broker sério. Kafka se escolhe por *replay e auditoria*, não por "fila é insegura".
@@ -139,7 +205,7 @@ Para consolidar, o mapa dos termos que se cruzaram na discussão — separados p
 
 ---
 
-## 7. Para ir além
+## 8. Para ir além
 
 - **Gregor Hohpe & Bobby Woolf**, *Enterprise Integration Patterns* — *Request-Reply*, *Dead Letter Channel*, *Publish-Subscribe Channel*: os nomes formais dos padrões que vocês já usam.
 - **Documentação RabbitMQ** — *Publisher Confirms* e *Consumer Acknowledgements*: a prova de que a fila não perde quando configurada certo.
