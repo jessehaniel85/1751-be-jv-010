@@ -2,6 +2,8 @@
 
 Este repositório contém o planejamento de aulas do projeto Caixa Escalação Tech (turma 1751 - módulo be-jv-010, **09/09 a 28/09/2026**). O objetivo é organizar materiais, cronogramas e recursos pedagógicos usados durante o desenvolvimento do curso.
 
+> **Origem:** este repositório é uma continuação (fork por clone, com o histórico preservado) do repositório irmão da turma anterior, [jessehaniel85/1705-be-jv-010](https://github.com/jessehaniel85/1705-be-jv-010) (1ª oferta do módulo, jun–jul/2026). O conteúdo foi revisado para a 1751 com base no que funcionou e no feedback daquela turma.
+
 Conteúdo
 - Material do aluno por encontro (leitura de consolidação)
 - Slides da apresentação do curso (Aula 1) e cronograma
