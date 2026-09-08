@@ -1,8 +1,8 @@
 # Checklist Semana 0 — Descoberta do Ambiente (BE-JV-010 · Caixa)
 
-> ⚠️ **Status pós-Aula 1 (22/06):** não rodou antes da Aula 1 — foi **iniciado ao vivo** e o restante virou **tarefa de casa dos alunos**. Já resolvido: **sem Docker/sandbox → Plano B** (seção 2). **Pendente e bloqueante:** resolução dos artefatos de fallback no Nexus (seção 3). Consolidar tudo em `relatorio-semana-0.md`.
+> **Turma 1751 — tarefa prévia (D-3, antes de 09/09).** Rode as seções abaixo na sua máquina da rede corporativa e devolva o resultado (print ou texto) no canal da turma. Na 1ª oferta este checklist foi feito ao vivo e consumiu a aula — desta vez ele vem antes. Já sabido pela turma anterior (mesma rede): **sem Docker/sandbox → Plano B (pura-JVM)**; o que precisa de confirmação é a **seção 3** (artefatos de fallback no Nexus). Consolidação em `relatorio-semana-0.md`.
 
-**Quando:** idealmente antes da Aula 1; na prática, em andamento como tarefa de casa.
+**Quando:** antes da Aula 1 (09/09); consolidação de 10 min na abertura.
 **Por quê:** define, **por tema**, se vale o **Plano B (restrito/pura-JVM)** ou o **Plano C (conceitual)** — o Plano A (Docker) já foi descartado. Sem fechar a seção 3, o hands-on de filas/tópicos (Aulas 4–7) fica no escuro.
 **Saída:** preencher `relatorio-semana-0.md` com os resultados e o veredito por tema.
 

@@ -1,6 +1,6 @@
 # Projeto Final em Grupo — BE-JV-010 (Nível III)
 
-**Formato:** grupos (3–4 integrantes) · **tema livre** · apresentação na **banca da Aula 9 (10/07)**.
+**Formato:** grupos (3–4 integrantes) · **tema livre** · apresentação na **banca da Aula 9 (28/09)**.
 **Apresentado na Aula 1.** Desenvolvido majoritariamente **dentro do tempo de aula** (2ª metade de cada encontro) + apresentação na Aula 9.
 
 ---
@@ -117,5 +117,5 @@ Perfil de execução: A | B | C  ·  Fallbacks usados: <quais>
 
 ---
 
-## 6. Banca (Aula 9 · 10/07)
+## 6. Banca (Aula 9 · 28/09)
 Cada grupo: demo (declarando perfil A/B/C) + **defesa das decisões** (não só "o que faz", mas "por que assim") + arguição do docente e dos pares + reflexão sobre uso de IA. Tempo por grupo ≈ 20 min.
