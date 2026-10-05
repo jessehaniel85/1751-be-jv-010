@@ -1,6 +1,6 @@
 # Projeto Final em Grupo — BE-JV-010 (Nível III)
 
-**Formato:** grupos (3–4 integrantes) · **tema livre** · apresentação na **banca da Aula 9 (28/09)**.
+**Formato:** grupos (3–4 integrantes) · **tema livre** · apresentação na **banca da Aula 9 (26/10)**.
 **Apresentado na Aula 1.** Desenvolvido majoritariamente **dentro do tempo de aula** (2ª metade de cada encontro) + apresentação na Aula 9.
 
 ---
