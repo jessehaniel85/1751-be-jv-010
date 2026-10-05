@@ -117,5 +117,5 @@ Perfil de execução: A | B | C  ·  Fallbacks usados: <quais>
 
 ---
 
-## 6. Banca (Aula 9 · 28/09)
+## 6. Banca (Aula 9 · 26/10)
 Cada grupo: demo (declarando perfil A/B/C) + **defesa das decisões** (não só "o que faz", mas "por que assim") + arguição do docente e dos pares + reflexão sobre uso de IA. Tempo por grupo ≈ 20 min.
