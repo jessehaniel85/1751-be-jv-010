@@ -1,0 +1,55 @@
+# Cluster RabbitMQ com 3 nós, para a demonstração de quorum queue e failover.
+#
+#   docker compose up -d --wait   # sobe os 3 nós e espera o cluster ficar saudável
+#   docker compose ps             # os 3 devem aparecer "healthy"
+#   docker compose down -v        # derruba e apaga os dados
+#
+# Painéis (usuário guest / senha guest):
+#   rabbit-1  http://localhost:15672   AMQP localhost:5672
+#   rabbit-2  http://localhost:15673   AMQP localhost:5673
+#   rabbit-3  http://localhost:15674   AMQP localhost:5674
+#
+# Roteiro passo a passo: plano-de-aulas/aula-07-complemento-clusters.md
+
+name: cluster-rabbitmq
+
+x-rabbit: &rabbit
+  image: rabbitmq:4.1-management
+  environment:
+    # Todos os nós precisam do mesmo "cookie" Erlang para conversar entre si.
+    RABBITMQ_ERLANG_COOKIE: demo-cluster-cookie
+  volumes:
+    - ./rabbitmq.conf:/etc/rabbitmq/conf.d/10-cluster.conf:ro
+  healthcheck:
+    test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+    interval: 10s
+    timeout: 10s
+    retries: 10
+
+services:
+  rabbit-1:
+    <<: *rabbit
+    hostname: rabbit-1
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  rabbit-2:
+    <<: *rabbit
+    hostname: rabbit-2
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+
+  rabbit-3:
+    <<: *rabbit
+    hostname: rabbit-3
+    ports:
+      - "5674:5672"
+      - "15674:15672"
+
+  # Gerador de carga (RabbitMQ PerfTest). Não sobe com o "up"; use sob demanda:
+  #   docker compose run --rm carga --uri amqp://guest:guest@rabbit-2 --queue <fila> ...
+  carga:
+    image: pivotalrabbitmq/perf-test:2.23.0
+    profiles: ["ferramentas"]
