@@ -1,6 +1,6 @@
 # Complemento — Clusters na prática: RabbitMQ e Kafka com Docker Compose
 
-> **Tempo estimado:** ~20 min de demonstração, metade para cada broker. Na aula passada falamos do RabbitMQ em cluster e, na Aula 7, §3, da **replicação** do Kafka, mas só no papel. Aqui você sobe os dois clusters na sua máquina, derruba nós de propósito e vê o que acontece com as mensagens. Os arquivos estão em [`ambiente/clusters/`](../ambiente/clusters/). Tudo é opcional: o professor demonstra com a tela compartilhada, e quem quiser repete em casa.
+> **Tempo estimado:** ~20 min de demonstração, metade para cada broker. Na aula passada falamos do RabbitMQ em cluster ([complemento da Aula 5, §5](aula-05-complemento-consumidores-concorrentes.md#5-com-o-rabbitmq-em-cluster)) e, na Aula 7, §3, da **replicação** do Kafka, mas só no papel. Aqui você sobe os dois clusters na sua máquina, derruba nós de propósito e vê o que acontece com as mensagens. Os arquivos estão em [`ambiente/clusters/`](../ambiente/clusters/). Tudo é opcional: o professor demonstra com a tela compartilhada, e quem quiser repete em casa.
 
 ---
 
