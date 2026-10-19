@@ -1,0 +1,71 @@
+# Cluster Kafka com 3 brokers (modo KRaft, sem ZooKeeper), para a demonstração de
+# réplicas, líder de partição, ISR e min.insync.replicas.
+#
+#   docker compose up -d --wait   # sobe os 3 brokers (~30 s)
+#   docker compose ps             # os 3 devem aparecer "healthy"
+#   docker compose down -v        # derruba e apaga os dados
+#
+# Dentro da rede do Docker os brokers se chamam kafka-1:9092, kafka-2:9092 e kafka-3:9092.
+# Para uma aplicação rodando na sua máquina (IDE, Maven):
+#   spring.kafka.bootstrap-servers=localhost:19092,localhost:29092,localhost:39092
+#
+# Roteiro passo a passo: plano-de-aulas/aula-07-complemento-clusters.md
+
+name: cluster-kafka
+
+x-kafka: &kafka
+  image: apache/kafka:3.9.1
+  environment: &kafka-env
+    # Mesmo ID de cluster nos 3 nós; cada nó tem o seu KAFKA_NODE_ID.
+    CLUSTER_ID: demo-cluster-kafka-0001
+    # Cada nó é broker (guarda partições) e controller (vota no quórum KRaft dos metadados).
+    KAFKA_PROCESS_ROLES: broker,controller
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    KAFKA_LISTENERS: INTERNO://:9092,CONTROLLER://:9093,EXTERNO://:19092
+    KAFKA_INTER_BROKER_LISTENER_NAME: INTERNO
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNO:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNO:PLAINTEXT
+    # Padrões do cluster: tópicos novos nascem com 3 réplicas e exigem 2 em sincronia.
+    KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+    KAFKA_MIN_INSYNC_REPLICAS: 2
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    KAFKA_HEAP_OPTS: -Xmx512m -Xms512m
+  healthcheck:
+    test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+    interval: 10s
+    timeout: 10s
+    retries: 10
+
+services:
+  kafka-1:
+    <<: *kafka
+    hostname: kafka-1
+    ports:
+      - "19092:19092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: INTERNO://kafka-1:9092,EXTERNO://localhost:19092
+
+  kafka-2:
+    <<: *kafka
+    hostname: kafka-2
+    ports:
+      - "29092:19092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: INTERNO://kafka-2:9092,EXTERNO://localhost:29092
+
+  kafka-3:
+    <<: *kafka
+    hostname: kafka-3
+    ports:
+      - "39092:19092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: INTERNO://kafka-3:9092,EXTERNO://localhost:39092
