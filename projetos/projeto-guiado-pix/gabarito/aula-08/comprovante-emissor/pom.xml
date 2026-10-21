@@ -27,6 +27,12 @@
             <groupId>br.com.caixa.pix</groupId>
             <artifactId>shared-contracts</artifactId>
         </dependency>
+        <dependency>
+            <groupId>au.com.dius.pact.provider</groupId>
+            <artifactId>junit5</artifactId>
+            <version>${pact.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

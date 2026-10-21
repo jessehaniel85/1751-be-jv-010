@@ -1,16 +1,22 @@
-# Perfil "demo" (só para a demonstração em aula): expõe o estado do circuit breaker
-# e habilita POST /demo/gateway para ligar/desligar a falha do gateway.
+# Perfil "demo" (só para a demonstração em aula): expõe o estado do circuit breaker, do bulkhead
+# e do rate limiter, e habilita /demo/gateway, /demo/gateway/rajada e /demo/reatores.
 resilience4j:
   circuitbreaker:
     instances:
-      notificacao-gateway:
+      gatewayNotificacao:
         register-health-indicator: true
+  thread-pool-bulkhead:
+    instances:
+      gatewayNotificacao:              # pequeno de propósito, para a recusa aparecer (decisão de 21/10/2026)
+        core-thread-pool-size: 2
+        max-thread-pool-size: 2
+        queue-capacity: 2
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,circuitbreakers,circuitbreakerevents
+        include: health,info,circuitbreakers,circuitbreakerevents,bulkheads,ratelimiters
   endpoint:
     health:
       show-details: always

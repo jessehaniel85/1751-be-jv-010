@@ -1,0 +1,84 @@
+{
+  "consumer": {
+    "name": "comprovante-notificacao"
+  },
+  "messages": [
+    {
+      "contents": {
+        "chavePixDestino": "string",
+        "comprovanteId": "e2490de5-5bd3-43d5-b7c4-526e33f71304",
+        "gravadoEm": "2026-10-21T18:00:00Z",
+        "valor": 100
+      },
+      "description": "evento de comprovante gravado",
+      "generators": {
+        "body": {
+          "$.chavePixDestino": {
+            "size": 20,
+            "type": "RandomString"
+          },
+          "$.comprovanteId": {
+            "type": "Uuid"
+          },
+          "$.valor": {
+            "max": 2147483647,
+            "min": 0,
+            "type": "RandomInt"
+          }
+        }
+      },
+      "matchingRules": {
+        "body": {
+          "$.chavePixDestino": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.comprovanteId": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+              }
+            ]
+          },
+          "$.gravadoEm": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z"
+              }
+            ]
+          },
+          "$.valor": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "number"
+              }
+            ]
+          }
+        }
+      },
+      "metaData": {
+        "contentType": "application/json"
+      }
+    }
+  ],
+  "metadata": {
+    "pact-jvm": {
+      "version": "4.6.14"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "comprovante-gravador"
+  }
+}

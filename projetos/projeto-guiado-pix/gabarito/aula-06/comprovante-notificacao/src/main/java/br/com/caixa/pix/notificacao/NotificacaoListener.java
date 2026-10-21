@@ -1,23 +1,21 @@
 package br.com.caixa.pix.notificacao;
 
 import br.com.caixa.pix.contracts.ComprovanteGravadoEvent;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-/**
- * Aula 6 — consome o tópico no consumer group "notificacao".
- * Outros grupos (antifraude, BI) consomem o MESMO tópico de forma independente.
- */
+/** Aula 6 — consumer group "notificacao": avisa o cliente de cada comprovante gravado. */
 @Component
 public class NotificacaoListener {
 
-    private static final Logger log = LoggerFactory.getLogger(NotificacaoListener.class);
+    private final NotificacaoService notificacaoService;
+
+    public NotificacaoListener(NotificacaoService notificacaoService) {
+        this.notificacaoService = notificacaoService;
+    }
 
     @KafkaListener(topics = "comprovante-gravado", groupId = "notificacao")
-    public void aoGravar(ComprovanteGravadoEvent evento) {
-        log.info("Notificando cliente: comprovante {} gravado em {}",
-                evento.identificadorComprovante(), evento.dataHoraGravacao());
+    public void aoGravar(ComprovanteGravadoEvent e) {
+        notificacaoService.avisarCliente(e.comprovanteId(), e.chavePixDestino());
     }
 }

@@ -3,23 +3,25 @@ package br.com.caixa.pix.gravador;
 import br.com.caixa.pix.contracts.ComprovanteGravadoEvent;
 import br.com.caixa.pix.contracts.ComprovanteView;
 import br.com.caixa.pix.contracts.GravarComprovanteCommand;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-/** GRAVAÇÃO: persiste (idempotente), expõe leitura e publica o evento de gravação. */
+/** GRAVAÇÃO: persiste (idempotente), expõe leitura e publica o fato "comprovante gravado" (Aula 6). */
 @Service
 public class GravadorService {
 
     private final ComprovanteRepository repository;
-    private final EventoPublisher eventos;
+    private final KafkaTemplate<String, ComprovanteGravadoEvent> kafkaTemplate;
 
-    public GravadorService(ComprovanteRepository repository, EventoPublisher eventos) {
+    public GravadorService(ComprovanteRepository repository,
+                           KafkaTemplate<String, ComprovanteGravadoEvent> kafkaTemplate) {
         this.repository = repository;
-        this.eventos = eventos;
+        this.kafkaTemplate = kafkaTemplate;
     }
 
     @Transactional
@@ -29,8 +31,16 @@ public class GravadorService {
         }
         Comprovante comprovante = Comprovante.aPartirDe(command);
         comprovante.marcarGravado();
-        repository.save(comprovante);
-        eventos.publicar(new ComprovanteGravadoEvent(command.identificadorComprovante(), LocalDateTime.now()));
+        repository.save(comprovante); // fonte da verdade persistida
+
+        var evento = new ComprovanteGravadoEvent(
+                comprovante.getId(),
+                comprovante.getDestino().valor(),
+                comprovante.getValor().valor(),
+                Instant.now());
+
+        // chave = id do comprovante → mesma partição, ordem preservada
+        kafkaTemplate.send(KafkaConfig.TOPICO, comprovante.getId().toString(), evento);
         return true;
     }
 
