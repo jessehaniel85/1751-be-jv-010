@@ -21,7 +21,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.support.serializer.JsonSerializer;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -65,10 +64,10 @@ class EventoGravadoVerificacaoTest {
 
         var evento = ArgumentCaptor.forClass(ComprovanteGravadoEvent.class);
         verify(kafka).send(eq(KafkaConfig.TOPICO), anyString(), evento.capture());
-        // o mesmo serializador do produtor real (KafkaConfig), com o ObjectMapper como o Boot o configura
+        // o serializador do produtor real (KafkaConfig), com o ObjectMapper como o Boot o configura
         var mapperDoBoot = Jackson2ObjectMapperBuilder.json()
                 .featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS).build();
-        try (Serializer<ComprovanteGravadoEvent> json = new JsonSerializer<>(mapperDoBoot)) {
+        try (Serializer<Object> json = KafkaConfig.serializadorDoEvento(mapperDoBoot)) {
             byte[] payload = json.serialize(KafkaConfig.TOPICO, evento.getValue());
             return new MessageAndMetadata(payload, Map.of("contentType", "application/json"));
         }

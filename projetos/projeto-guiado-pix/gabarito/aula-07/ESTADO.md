@@ -8,8 +8,9 @@
 - `NotificacaoService.avisar` é **idempotente** (`NotificacaoRepository`, chave = id do comprovante).
 - O `GatewayCliente` protege a chamada ao gateway externo com **bulkhead** (THREADPOOL, por isso devolve
   `CompletableFuture`), **circuit breaker** (`gatewayNotificacao`: janela 10, 50%, 30 s aberto) e
-  **rate limiter** (100 por segundo); o **fallback** agenda reenvio (`ReenvioRepository`).
-- Para exercitar: descomente o `throw` em `GatewayHttp.post` e observe o reenvio agendado e a abertura do circuito.
+  **rate limiter** (100 por segundo); o **fallback** agenda reenvio (`ReenvioRepository`) **e devolve a falha**,
+  que segue para o retry e a DLT. O `ReenvioService` drena o reenvio, um por vez, quando o circuito volta a *closed*.
+- Para exercitar: descomente o `throw` em `GatewayHttp.post` e observe o reenvio agendado, o retry → DLT e a abertura do circuito.
 
 ## Runtime
 Requer Kafka no ar (Plano A Docker / Plano B EmbeddedKafka ou local). Compila sem broker.

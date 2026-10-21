@@ -9,7 +9,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Aula 7 — a chamada ao gateway, protegida:
@@ -23,9 +22,6 @@ public class GatewayCliente {
 
     private final GatewayHttp gatewayHttp;
     private final ReenvioRepository reenvioRepository;
-
-    // Demonstração (perfil "demo"): em vez de degradar, devolve a falha para o retry e a DLT.
-    private final AtomicBoolean propagarFalha = new AtomicBoolean(false);
 
     public GatewayCliente(GatewayHttp gatewayHttp, ReenvioRepository reenvioRepository) {
         this.gatewayHttp = gatewayHttp;
@@ -42,20 +38,8 @@ public class GatewayCliente {
 
     // chamado quando o circuito está aberto OU a chamada falha (inclusive bulkhead cheio)
     private CompletableFuture<Void> fallback(String destino, UUID comprovanteId, Throwable t) {
-        if (propagarFalha.get()) {
-            log.warn("Gateway indisponível ({}). Devolvendo a falha do comprovante {}", t.getMessage(), comprovanteId);
-            return CompletableFuture.failedFuture(t); // o consumo falha → tópicos de retry → DLT
-        }
         log.warn("Gateway indisponível ({}). Enfileirando para reenvio: {}", t.getMessage(), comprovanteId);
-        reenvioRepository.agendar(comprovanteId); // degrada com elegância, não derruba
-        return CompletableFuture.completedFuture(null);
-    }
-
-    public void propagarFalha(boolean propagar) {
-        propagarFalha.set(propagar);
-    }
-
-    public boolean propagaFalha() {
-        return propagarFalha.get();
+        reenvioRepository.agendar(comprovanteId, destino); // drenado quando o circuito fechar (ReenvioService)
+        return CompletableFuture.failedFuture(t);           // e a falha segue para o retry e, no limite, a DLT
     }
 }

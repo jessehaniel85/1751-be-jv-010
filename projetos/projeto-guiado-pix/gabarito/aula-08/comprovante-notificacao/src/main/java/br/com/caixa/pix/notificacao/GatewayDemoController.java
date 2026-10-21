@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.IntStream;
@@ -37,31 +38,28 @@ public class GatewayDemoController {
         this.compliance = compliance;
     }
 
-    /** falhar: o gateway lança erro; propagar: o fallback devolve a falha (retry e DLT); lentidao: ms por chamada. */
+    /** falhar: o gateway lança erro; lentidao: ms por chamada. */
     @PostMapping("/gateway")
     public String configurar(@RequestParam(defaultValue = "false") boolean falhar,
-                             @RequestParam(defaultValue = "false") boolean propagar,
                              @RequestParam(defaultValue = "0") long lentidao) {
         gatewayHttp.configurar(falhar, lentidao);
-        gateway.propagarFalha(propagar);
         return estado();
     }
 
     @GetMapping("/gateway")
     public String estado() {
-        return gatewayHttp.estado() + ", propagar=" + gateway.propagaFalha();
+        return gatewayHttp.estado();
     }
 
-    /** n chamadas simultâneas ao gateway: com ele lento, o bulkhead recusa o que não cabe no pool + fila. */
+    /** n chamadas simultâneas ao gateway: com ele lento, o bulkhead recusa o que não cabe no pool + fila (essas vão para reenvio). */
     @PostMapping("/gateway/rajada")
     public String rajada(@RequestParam(defaultValue = "10") int n) {
-        int antes = reenvios.pendentes();
         CompletableFuture<?>[] chamadas = IntStream.range(0, n)
                 .mapToObj(i -> CompletableFuture.supplyAsync(() ->
                         gateway.enviar("demo@pix.com", UUID.randomUUID())).thenCompose(f -> f))
                 .toArray(CompletableFuture[]::new);
         CompletableFuture.allOf(chamadas).exceptionally(t -> null).join();
-        int recusadas = reenvios.pendentes() - antes;
+        long recusadas = Arrays.stream(chamadas).filter(CompletableFuture::isCompletedExceptionally).count();
         return "chamadas=" + n + ", atendidas=" + (n - recusadas) + ", enviadas_para_reenvio=" + recusadas;
     }
 

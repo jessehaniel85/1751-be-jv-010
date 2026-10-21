@@ -240,32 +240,12 @@
           ]
         },
         {
-          "name": "Gateway: falha com reenvio agendado (fallback degrada)",
+          "name": "Gateway: falha (reenvio agendado + retry → DLT)",
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{notificacao}}/demo/gateway?falhar=true&propagar=false",
+            "url": "{{notificacao}}/demo/gateway?falhar=true",
             "description": "A notificação se perde em silêncio: sem retry, sem DLT."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Gateway: falha propagada (retry → DLT)",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": "{{notificacao}}/demo/gateway?falhar=true&propagar=true",
-            "description": "O consumo falha: tópicos de retry com espera de 1 s, 2 s e 4 s, depois a DLT."
           },
           "event": [
             {
@@ -324,7 +304,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{notificacao}}/demo/gateway?falhar=false&propagar=false&lentidao=0"
+            "url": "{{notificacao}}/demo/gateway?falhar=false&lentidao=0"
           },
           "event": [
             {
@@ -352,7 +332,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "const cb = pm.response.json().circuitBreakers[\"notificacao-gateway\"];",
+                  "const cb = pm.response.json().circuitBreakers[\"gatewayNotificacao\"];",
                   "console.log(\"estado\", cb.state, \"falhas\", cb.failureRate);"
                 ]
               }

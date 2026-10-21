@@ -14,6 +14,6 @@ public class GatewayHttp {
 
     public void post(String destino, UUID comprovanteId) {
         log.info("Enviando notificação do comprovante {} para {}", comprovanteId, destino);
-        // throw new IllegalStateException("gateway indisponível"); // descomente para exercitar retry/breaker
+        // throw new IllegalStateException("gateway indisponível"); // descomente para exercitar reenvio, retry → DLT e breaker
     }
 }

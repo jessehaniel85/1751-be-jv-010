@@ -9,12 +9,13 @@
 - **Falha permanente** (comando malformado): `AmqpRejectAndDontRequeueException`, classificada como não-retentável,
   vai **direto** para a DLQ.
 - **DLQ**: a mensagem vai para `gravacao.dlq` (via `gravacao.dlx`, direct, routing key `comprovante.morto`),
-  **preservada para inspeção** — um listener da DLQ registra o ocorrido.
+  **preservada para inspeção**: a DLQ não tem consumidor; veja a mensagem e os headers `x-death` no painel.
+- Corpo ilegível (`MessageConversionException`) também é falha permanente: direto para a DLQ.
 - **Idempotência** mantida no `gravar()` (redelivery seguro).
 
 ## Como provar a DLQ
 Force o `gravar()` a lançar exceção para um id específico (mensagem "envenenada") e observe:
-4 tentativas → cai na `gravacao.dlq` → log de aviso. Mensagem boa segue normal.
+4 tentativas → cai na `gravacao.dlq` (veja no painel do RabbitMQ). Mensagem boa segue normal.
 
 ## Runtime do broker
 Igual à Aula 4 (Plano A: RabbitMQ Docker; Plano B: Qpid embarcado/local).

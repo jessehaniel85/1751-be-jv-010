@@ -34,11 +34,11 @@ A Aula 9 é a banca de defesa — sem incremento de código.
   `snake_case`; o HTTP interno segue em `camelCase` (contrato PACT com a consulta).
 - **Circuit breaker:** faltava `spring-boot-starter-aop` na notificação; sem ele o `@CircuitBreaker` não agia.
 - **PACT consumidor:** `GravadorContractTest` declara `pactVersion = V3` (V4 com `RequestResponsePact` falha no Pact 4.6).
-- **Perfil `demo`** (só a notificação): `POST /demo/gateway?falhar=&propagar=&lentidao=` controla o gateway simulado
+- **Perfil `demo`** (só a notificação): `POST /demo/gateway?falhar=&lentidao=` controla o gateway simulado
   sem editar código; `POST /demo/gateway/rajada?n=` dispara chamadas simultâneas (bulkhead de 2 threads e fila de 2);
   `GET /demo/reatores` mostra BI, compliance, reenvios e falhas permanentes. O actuator expõe `circuitbreakers`,
-  `circuitbreakerevents`, `bulkheads` e `ratelimiters`. `propagar=false` agenda reenvio (sem retry/DLT);
-  `propagar=true` leva à DLT.
+  `circuitbreakerevents`, `bulkheads` e `ratelimiters`. Com o gateway fora, o fallback agenda reenvio e devolve a
+  falha (retry → DLT); quando o circuito fecha, o `ReenvioService` drena o reenvio.
 
 ## Alinhamento ao material (21/10/2026)
 O gabarito das aulas 1 a 8 passou a seguir o código do material do aluno (nomes, modelo de domínio, topologia,

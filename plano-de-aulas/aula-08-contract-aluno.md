@@ -129,13 +129,19 @@ class GravadorContractTest {
     @Test
     @PactTestFor(pactMethod = "comprovanteExiste")
     void leRespostaDoGravador(MockServer mock) {
-        var client = new GravadorClient(RestClient.builder(), mock.getUrl());
+        // o builder de produção (GravadorClientConfig: timeout e camelCase do gravador),
+        // com o ObjectMapper snake_case desta API — assim o teste pega a divergência de nomes
+        var client = new GravadorClient(new GravadorClientConfig()
+                .restClientBuilder(Duration.ofSeconds(2), Jackson2ObjectMapperBuilder.json()
+                        .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE).build()),
+                mock.getUrl());
 
         var dto = client.buscarPorId(
             UUID.fromString("7f3a0e4c-1d2b-4c8a-9f01-2a3b4c5d6e7f"));
 
         assertThat(dto).isPresent();
         assertThat(dto.get().valor()).isEqualByComparingTo("150.00");  // valida o que importa
+        assertThat(dto.get().chavePix()).isEqualTo("joao@pix.com");    // nome composto: pega snake × camel
     }
 }
 ```

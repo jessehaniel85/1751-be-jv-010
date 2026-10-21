@@ -25,6 +25,11 @@ public class KafkaConfig {
     @SuppressWarnings("unchecked")
     public DefaultKafkaProducerFactoryCustomizer eventoEmJson(ObjectMapper mapper) {
         return fabrica -> ((DefaultKafkaProducerFactory<Object, Object>) fabrica)
-                .setValueSerializer(new JsonSerializer<>(mapper));
+                .setValueSerializer(serializadorDoEvento(mapper));
+    }
+
+    /** O serializador do evento, também usado pelo teste do message pact. */
+    public static JsonSerializer<Object> serializadorDoEvento(ObjectMapper mapper) {
+        return new JsonSerializer<>(mapper);
     }
 }

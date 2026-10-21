@@ -131,7 +131,8 @@ Com Spring AMQP isso se configura declarativamente, sem poluir o listener:
 public RetryOperationsInterceptor retryInterceptor() {
     return RetryInterceptorBuilder.stateless()
             .retryPolicy(new SimpleRetryPolicy(4,             // 1 original + 3 retries
-                    Map.of(AmqpRejectAndDontRequeueException.class, false), // permanente: sem retry
+                    Map.of(AmqpRejectAndDontRequeueException.class, false,  // permanente: sem retry
+                           MessageConversionException.class, false),         // corpo ilegível também
                     true, true))
             .backOffOptions(1000, 2.0, 10000)               // 1s, 2s, 4s... teto 10s
             .recoverer(new RejectAndDontRequeueRecoverer()) // esgotou → dead-letter

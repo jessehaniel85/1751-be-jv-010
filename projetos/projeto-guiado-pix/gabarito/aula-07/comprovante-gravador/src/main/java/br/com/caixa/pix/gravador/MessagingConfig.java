@@ -13,6 +13,7 @@ import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFacto
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.MessageConversionException;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -72,7 +73,8 @@ public class MessagingConfig {
     public RetryOperationsInterceptor retryInterceptor() {
         return RetryInterceptorBuilder.stateless()
                 .retryPolicy(new SimpleRetryPolicy(4,             // 1 original + 3 retries
-                        Map.of(AmqpRejectAndDontRequeueException.class, false), // permanente: sem retry
+                        Map.of(AmqpRejectAndDontRequeueException.class, false,  // permanente: sem retry
+                               MessageConversionException.class, false),         // corpo ilegível também
                         true, true))
                 .backOffOptions(1000, 2.0, 10000)               // 1s, 2s, 4s... teto 10s
                 .recoverer(new RejectAndDontRequeueRecoverer()) // esgotou → dead-letter

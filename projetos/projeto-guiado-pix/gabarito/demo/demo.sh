@@ -148,6 +148,7 @@ para() {
     if kill "$pid" 2>/dev/null; then
         # O desligamento do Spring termina o que está em andamento: espera o processo sair.
         for i in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null   # não saiu em 30 s: encerra à força
         echo "$1 parado"
     else
         echo "$1 já estava parado"
@@ -213,7 +214,9 @@ derruba() {
         para "$1"
         return
     fi
-    read -r cluster servico <<< "$(no_do_cluster "${1:-}" "${2:-}")"
+    local alvo
+    alvo="$(no_do_cluster "${1:-}" "${2:-}")" || exit 1
+    read -r cluster servico <<< "$alvo"
     passo "Parando $servico"
     docker compose -f "$CLUSTERS_DIR/$cluster/docker-compose.yml" stop "$servico"
 }
@@ -228,7 +231,9 @@ levanta() {
     if [[ "${2:-}" == todos ]]; then
         # Depois de uma queda total, cada nó espera os outros para remontar o cluster:
         # subir um por vez com --wait trava no primeiro. Os três juntos se encontram.
-        read -r cluster _ <<< "$(no_do_cluster "${1:-}" 1)"
+        local alvo
+        alvo="$(no_do_cluster "${1:-}" 1)" || exit 1
+        read -r cluster _ <<< "$alvo"
         passo "Religando os três nós de $cluster juntos"
         # No ensaio, um nó do RabbitMQ às vezes sai com erro na primeira subida e volta na segunda.
         local tentativa
@@ -238,7 +243,9 @@ levanta() {
         done
         falha "o cluster não voltou; veja: docker compose -f $CLUSTERS_DIR/$cluster/docker-compose.yml logs"
     fi
-    read -r cluster servico <<< "$(no_do_cluster "${1:-}" "${2:-}")"
+    local alvo
+    alvo="$(no_do_cluster "${1:-}" "${2:-}")" || exit 1
+    read -r cluster servico <<< "$alvo"
     passo "Religando $servico"
     docker compose -f "$CLUSTERS_DIR/$cluster/docker-compose.yml" up -d --wait "$servico"
 }
@@ -261,7 +268,7 @@ grupo() {
     [[ -n "$kno" ]] || falha "nenhum broker de pé"
     passo "Kafka: consumer group $nome no tópico comprovante-gravado"
     KAFKA_NO="$kno" kafka_grupos --describe --group "$nome" 2>&1 \
-        | grep -E "^GROUP|comprovante-gravado |has no active members" \
+        | { grep -E "^GROUP|comprovante-gravado |has no active members" || echo "(o grupo $nome ainda não existe no Kafka)"; } \
         | awk '{ if ($1 == "GROUP") print "PARTIÇÃO  OFFSET  FIM  LAG  INSTÂNCIA"; \
                  else if ($2 == "comprovante-gravado") { sub(/-[0-9]+$/, "", $9); printf "%-9s %-7s %-4s %-4s %s\n", $3, $4, $5, $6, $9 } \
                  else print }'

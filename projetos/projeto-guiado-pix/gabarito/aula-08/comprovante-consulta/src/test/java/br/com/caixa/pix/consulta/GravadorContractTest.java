@@ -10,8 +10,12 @@ import au.com.dius.pact.core.model.RequestResponsePact;
 import au.com.dius.pact.core.model.annotations.Pact;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.web.client.RestClient;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 
@@ -24,6 +28,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExtendWith(PactConsumerTestExt.class)
 @PactTestFor(providerName = "comprovante-gravador", pactVersion = PactSpecVersion.V3)
 class GravadorContractTest {
+
+    /** O ObjectMapper como o Boot o monta nesta API (snake_case, application.yml). */
+    private static final ObjectMapper MAPPER_DA_CONSULTA = Jackson2ObjectMapperBuilder.json()
+            .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+            .featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS).build();
+
+    /** O GravadorClient com a configuração de produção (timeout e camelCase do gravador). */
+    private static GravadorClient clienteDeProducao(MockServer mock) {
+        return new GravadorClient(new GravadorClientConfig()
+                .restClientBuilder(Duration.ofSeconds(2), MAPPER_DA_CONSULTA), mock.getUrl());
+    }
 
     @Pact(consumer = "comprovante-consulta")
     RequestResponsePact comprovanteExiste(PactDslWithProvider builder) {
@@ -59,19 +74,21 @@ class GravadorContractTest {
     @Test
     @PactTestFor(pactMethod = "comprovanteExiste")
     void leRespostaDoGravador(MockServer mock) {
-        var client = new GravadorClient(RestClient.builder(), mock.getUrl());
+        var client = clienteDeProducao(mock);
 
         var dto = client.buscarPorId(
             UUID.fromString("7f3a0e4c-1d2b-4c8a-9f01-2a3b4c5d6e7f"));
 
         assertThat(dto).isPresent();
         assertThat(dto.get().valor()).isEqualByComparingTo("150.00");  // valida o que importa
+        assertThat(dto.get().chavePix()).isEqualTo("joao@pix.com");    // nome composto: pega snake × camel
+        assertThat(dto.get().dataHora()).isNotNull();
     }
 
     @Test
     @PactTestFor(pactMethod = "comprovanteInexistente")
     void inexistenteViraVazio(MockServer mock) {
-        var client = new GravadorClient(RestClient.builder(), mock.getUrl());
+        var client = clienteDeProducao(mock);
 
         assertThat(client.buscarPorId(UUID.fromString("00000000-0000-0000-0000-000000000000"))).isEmpty();
     }

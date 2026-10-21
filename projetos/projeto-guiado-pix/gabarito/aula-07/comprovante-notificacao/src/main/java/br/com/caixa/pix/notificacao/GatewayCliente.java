@@ -39,7 +39,7 @@ public class GatewayCliente {
     // chamado quando o circuito está aberto OU a chamada falha (inclusive bulkhead cheio)
     private CompletableFuture<Void> fallback(String destino, UUID comprovanteId, Throwable t) {
         log.warn("Gateway indisponível ({}). Enfileirando para reenvio: {}", t.getMessage(), comprovanteId);
-        reenvioRepository.agendar(comprovanteId); // degrada com elegância, não derruba
-        return CompletableFuture.completedFuture(null);
+        reenvioRepository.agendar(comprovanteId, destino); // drenado quando o circuito fechar (ReenvioService)
+        return CompletableFuture.failedFuture(t);           // e a falha segue para o retry e, no limite, a DLT
     }
 }

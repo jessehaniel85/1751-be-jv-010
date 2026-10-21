@@ -83,26 +83,27 @@ Abra na IDE o módulo `aula-08/comprovante-notificacao`:
 
 - **`NotificacaoListener`:** `@RetryableTopic` com 4 tentativas, espera de ~1 s dobrando a cada vez e com *jitter* (`random = true`), mais o `@DltHandler`, que chama o `AlertaService`.
 - **`NotificacaoService`:** o aviso idempotente (`jaNotificado` / `marcarNotificado`).
-- **`GatewayCliente`:** `@Bulkhead` (pool de threads próprio), `@CircuitBreaker` e `@RateLimiter`, com o `fallback` que agenda reenvio.
+- **`GatewayCliente`:** `@Bulkhead` (pool de threads próprio), `@CircuitBreaker` e `@RateLimiter`, com o `fallback` que agenda reenvio e devolve a falha.
+- **`ReenvioService`:** drena o reenvio quando o circuito volta a *closed*.
 - **`application.yml`:** o circuito `gatewayNotificacao` (janela de 10, 50% de falha, 30 s aberto) e o rate limiter (100 chamadas por segundo).
 
 O serviço sobe com o perfil `demo`, que acrescenta botões para derrubar ou deixar lento o gateway externo sem editar código (`/demo/gateway`; veja `GatewayDemoController` e `GatewayHttp`).
 
 | # | Faça | Antes de rodar, preveja | O que aparece |
 |---|---|---|---|
-| 1 | `./chamadas.sh falha on`, `./chamadas.sh emitir 2` e `./chamadas.sh reatores` | O gateway caiu. O retry vai tentar de novo? | `Gateway indisponível (gateway indisponível). Enfileirando para reenvio: <id>`, uma vez por comprovante; `reenvios_pendentes=2`. Nenhum retry, nenhuma DLT |
-| 2 | `./chamadas.sh falha propaga`, `./chamadas.sh emitir` e `./chamadas.sh reatores` | E agora, que o fallback devolve a falha? | Quatro tentativas, com intervalos que **variam** (no ensaio: 1,7 s, 2,2 s e 4,9 s); depois `caiu na DLT do tópico de notificação: falha permanente, precisa de olhar humano` e `falhas_permanentes=1` |
-| 3 | Emita mais um ou dois e `./chamadas.sh circuito` | Quantas falhas até o circuito abrir? | `failureRate:90.0% … state:OPEN`. Log: `CircuitBreaker 'gatewayNotificacao' is OPEN and does not permit further calls` |
-| 4 | `./chamadas.sh falha off`, espere **30 s**, `./chamadas.sh emitir 3` e `./chamadas.sh circuito` | Quem decide que o gateway voltou? | `state:CLOSED`. Depois dos 30 s, as chamadas seguintes passam pelo meio-aberto (3 de teste) e fecham o circuito |
-| 5 | `./chamadas.sh lento 2000`, `./chamadas.sh bulkhead 10` e `./chamadas.sh circuito` | O gateway ficou lento, não caiu. O que acontece com 10 chamadas ao mesmo tempo? | `chamadas=10, atendidas=4, enviadas_para_reenvio=6`: o pool tem 2 threads e fila de 2 (perfil `demo`); as outras 6 recebem `Bulkhead 'gatewayNotificacao' is full`. E o circuito **abre** (`failureRate:60.0%`) |
-| 6 | `./chamadas.sh falha off` (zera a lentidão) | — | Gateway normal; o circuito fecha sozinho depois de 30 s e das chamadas de teste |
+| 1 | `./chamadas.sh falha on`, `./chamadas.sh emitir 2`; espere uns 15 s e `./chamadas.sh reatores` | O gateway caiu. O retry vai tentar de novo? E a notificação se perde? | Por comprovante, quatro tentativas com intervalos que **variam** (~1, 2 e 4 s), cada uma com `Gateway indisponível (gateway indisponível). Enfileirando para reenvio: <id>`; depois `caiu na DLT do tópico de notificação: falha permanente, precisa de olhar humano`. `reenvios_pendentes=2` e `falhas_permanentes=2` |
+| 2 | Mais um `./chamadas.sh emitir` e `./chamadas.sh circuito` | Quantas falhas até o circuito abrir? | `failureRate:90.0% … state:OPEN`. Log: `CircuitBreaker 'gatewayNotificacao' is OPEN and does not permit further calls` |
+| 3 | `./chamadas.sh falha off`, espere **30 s**, `./chamadas.sh emitir 3`, `./chamadas.sh circuito` e `./chamadas.sh reatores` | Quem decide que o gateway voltou? E os pendentes? | `state:CLOSED`, e no log `Gateway de volta: reenviando 3 notificação(ões) pendente(s)`, seguido do envio de cada um; `reenvios_pendentes=0` |
+| 4 | `./chamadas.sh lento 2000`, `./chamadas.sh bulkhead 10` e `./chamadas.sh circuito` | O gateway ficou lento, não caiu. O que acontece com 10 chamadas ao mesmo tempo? | `chamadas=10, atendidas=4, enviadas_para_reenvio=6`: o pool tem 2 threads e fila de 2 (perfil `demo`); as outras 6 recebem `Bulkhead 'gatewayNotificacao' is full`. E o circuito **abre** (`failureRate:60.0%`) |
+| 5 | `./chamadas.sh falha off`, espere 30 s, `./chamadas.sh emitir 3` e `./chamadas.sh reatores` | — | Circuito fechado, os 6 reenviados um por vez, `reenvios_pendentes=0` |
 
 **Para pensar:**
 
-- **No passo 1:** o fallback **degradou com elegância**: agendou o reenvio em vez de derrubar o consumo. A notificação não se perdeu; ficou para depois. E se o reenvio também falhar? Quem olha a fila de reenvio? (`aula-08-aluno.md`, §5.)
-- **No passo 2:** por que o intervalo dobra em vez de ser fixo, e por que ele varia? (§3, *retry storm* e *jitter*.) E por que o retry só é seguro porque o consumidor é idempotente? (§4.)
-- **No passo 3:** com o circuito aberto, quem deixou de sofrer: o gateway ou a gente?
-- **No passo 5:** o circuito contou as recusas do bulkhead como falha. Isso é bom ou ruim? Num gateway lento, faz sentido parar de chamar por 30 s?
+- **No passo 1:** o fallback guardou a notificação para depois **e** devolveu a falha. Por que não devolver sucesso? (O consumidor marcaria o comprovante como notificado, o offset andaria, e o retry e a DLT nunca aconteceriam.) A DLT avisa um humano; o reenvio entrega quando o gateway voltar. A idempotência impede o SMS em dobro (`aula-08-aluno.md`, §4, §5 e §8).
+- **No passo 1:** por que o intervalo dobra **e** varia? (§3, *retry storm* e *jitter*.)
+- **No passo 2:** com o circuito aberto, quem deixou de sofrer: o gateway ou a gente?
+- **No passo 3:** quem drenou o reenvio? (O `ReenvioService`, que escuta o circuito e age quando ele volta a *closed*.)
+- **No passo 4:** o circuito contou as recusas do bulkhead como falha. Isso é bom ou ruim? Num gateway lento, faz sentido parar de chamar por 30 s?
 - **Onde estão os tópicos de retry?** Rode `kafka-topics.sh --list` dentro de um broker: `comprovante-gravado-retry-0`, `-retry-1`, `-retry-2` e `-dlt`. Com *jitter*, o atraso não serve de nome, e o código usa o sufixo por índice (`topicSuffixingStrategy`).
 
 ---
@@ -291,7 +292,7 @@ Importe os dois arquivos de `demo/` (*Import* → arraste a collection e o envir
   - consultar;
   - ler direto no gravador;
   - emitir com agência inválida, que dá 400.
-- **2. Resiliência (perfil demo):** ver o estado do gateway, ligar a falha (com reenvio agendado ou propagada até a DLT), deixar o gateway lento e disparar a rajada do bulkhead, voltar ao normal, ver o estado e os eventos do circuito e os contadores dos reatores.
+- **2. Resiliência (perfil demo):** ver o estado do gateway, derrubá-lo (reenvio agendado + retry → DLT), deixá-lo lento e disparar a rajada do bulkhead, voltar ao normal, ver o estado e os eventos do circuito e os contadores dos reatores.
 
 Cada requisição tem testes; rode a collection inteira pelo *Runner* com tudo de pé. A collection não derruba nós nem serviços: para as partes 3.1 e 4 a 7, use o `demo.sh`.
 
@@ -319,7 +320,7 @@ docker ps               # não deve sobrar nenhum contêiner cluster-*
 | Log da notificação mudo | Suba pelo `demo.sh`, que passa o `logback-demo.xml` |
 | Teste HTTP do provedor (PACT) demora | É esperado: ele sobe o Spring do gravador e leva perto de 1 minuto, com ou sem brokers |
 | `Did not find a test class method annotated with @State(...)` | O pact em `target/pacts/` acumulou interações antigas: apague `target/pacts/`, rode o consumidor de novo e copie o arquivo para `src/test/resources/pacts/` |
-| O circuito não abre | A janela é de 10 chamadas, com 50% de falha. Emita mais com `falha propaga`: cada comprovante gera 4 chamadas |
+| O circuito não abre | A janela é de 10 chamadas, com 50% de falha. Emita mais com `falha on`: cada comprovante gera 4 chamadas |
 | O circuito não fecha | Ele fica aberto 30 s e só passa a meio-aberto quando chega uma chamada: emita alguns comprovantes depois dos 30 s. Confira se a falha e a lentidão estão desligadas (`./chamadas.sh falha off`) |
 | `compliance_arquivados=0` depois do `./demo.sh compliance` | Espere uns 10 s (o grupo novo precisa entrar e ler o tópico) e repita `./chamadas.sh reatores` |
 | Contêiner reiniciando ou máquina lenta | Falta memória: feche aplicações, aumente a memória do Docker Desktop ou faça uma parte por vez (`./demo.sh clusters-up` sobe só os clusters) |

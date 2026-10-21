@@ -124,13 +124,13 @@ public class GatewayCliente {
     // chamado quando o circuito está aberto OU a chamada falha
     private CompletableFuture<Void> fallback(String destino, UUID comprovanteId, Throwable t) {
         log.warn("Gateway indisponível ({}). Enfileirando para reenvio: {}", t.getMessage(), comprovanteId);
-        reenvioRepository.agendar(comprovanteId); // degrada com elegância, não derruba
-        return CompletableFuture.completedFuture(null);
+        reenvioRepository.agendar(comprovanteId, destino); // drenado quando o circuito fechar
+        return CompletableFuture.failedFuture(t);           // e a falha segue para o retry e, no limite, a DLT
     }
 }
 ```
 
-O **fallback** é o par natural do breaker: quando o circuito abre, em vez de explodir, você executa um plano B (enfileirar para depois, retornar uma resposta degradada, usar cache). Falhar de propósito **com** um plano B é o auge da resiliência.
+O **fallback** é o par natural do breaker: quando o circuito abre, em vez de só explodir, você executa um plano B (enfileirar para depois, retornar uma resposta degradada, usar cache). Falhar de propósito **com** um plano B é o auge da resiliência. Aqui o plano B guarda a notificação para reenviar e **ainda assim devolve a falha**: se o fallback devolvesse sucesso, o consumidor marcaria o comprovante como notificado, o offset andaria e o retry e a DLT da seção 7 nunca aconteceriam. No gabarito, um `ReenvioService` escuta o circuito e, quando ele volta a *closed*, drena a fila de reenvio, um por vez.
 
 ---
 
@@ -209,7 +209,7 @@ Juntando as peças, vamos seguir um evento `comprovante-gravado` em três cenár
 
 **Cenário B — falha transitória (gateway soluça).** Timeout na primeira tentativa. `@RetryableTopic` republica no `retry-0` com 1s de delay; na segunda, o gateway respondeu OK. A idempotência garante que, se o SMS tinha sido enviado mas a resposta se perdeu, o `jaNotificado` impede o segundo envio. Notificação entregue, **sem duplicação**, sem travar a partição.
 
-**Cenário C — falha permanente (gateway fora há minutos).** As primeiras falhas enchem a sliding window; ao cruzar 50%, o **circuit breaker abre**. Cada tentativa passa a **falhar na hora** (sem esperar timeout) e cai no `fallback`, que **enfileira para reenvio** em vez de explodir. Esgotadas as 4 tentativas, a mensagem vai para a **DLT** e o `@DltHandler` dispara um alerta. O serviço **continua de pé**, sem esgotar threads e sem derrubar antifraude e BI (isolados por bulkhead + consumer groups separados). Quando o gateway volta, o breaker passa a *half-open*, testa, fecha, e o reenvio é drenado.
+**Cenário C — falha permanente (gateway fora há minutos).** As primeiras falhas enchem a sliding window; ao cruzar 50%, o **circuit breaker abre**. Cada tentativa passa a **falhar na hora** (sem esperar timeout) e cai no `fallback`, que **enfileira para reenvio** e devolve a falha ao retry. Esgotadas as 4 tentativas, a mensagem vai para a **DLT** e o `@DltHandler` dispara um alerta. O serviço **continua de pé**, sem esgotar threads e sem derrubar antifraude e BI (isolados por bulkhead + consumer groups separados). Quando o gateway volta, o breaker passa a *half-open*, testa, fecha, e o reenvio é drenado.
 
 Os três cenários com a **mesma** configuração. Isso é "decidir como falhar de propósito": o comportamento sob falha não é improviso — está desenhado.
 

@@ -22,7 +22,7 @@ spring:
     bootstrap-servers: ${KAFKA:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer   # instanciado pelo KafkaConfig com o ObjectMapper do Boot
 
 management:
   endpoints:
