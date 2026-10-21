@@ -3,10 +3,11 @@
 **Foco:** garantir atomicidade emissão→gravação sem transação distribuída.
 
 ## O que funciona
-- **SAGA orquestrada (síncrona):** o `EmissaoService` aceita, chama o **gravador via REST**
-  (`POST /interno/comprovantes`) e, se a gravação falhar, executa a **compensação**
-  (marca a emissão como `FALHOU` no `EmissaoRegistro`) e devolve **502**.
-- **Idempotência** no gravador: reprocessar o mesmo `id` não duplica (`existsById`).
+- **SAGA orquestrada (síncrona):** o `EmissaoSagaOrchestrator` registra a emissão (`EmissaoService.registrar`),
+  chama o **gravador via REST** (`GravadorClient`, `POST /comprovantes`, timeout de 2 s) e, se a gravação falhar
+  (`GravacaoException`), executa a **compensação** (`EmissaoService.invalidar`: status `INVALIDADO` com o motivo)
+  e devolve **502** (`SagaAbortada`).
+- **Idempotência** no gravador: reprocessar o mesmo `id` não duplica (`existsById`, em `@Transactional`).
 - Sucesso → **202** com o id.
 
 ## Por que síncrono aqui

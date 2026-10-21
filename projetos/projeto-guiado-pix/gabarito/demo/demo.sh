@@ -12,7 +12,8 @@
 #   ./demo.sh derruba gravador  # para um serviço (emissor|gravador|consulta|notificacao|notificacao-2|-3)
 #   ./demo.sh levanta gravador  # religa o serviço
 #   ./demo.sh escala 3          # 1 a 3 instâncias da notificação no mesmo consumer group
-#   ./demo.sh grupo             # consumer group notificacao: partição, offset, lag e instância
+#   ./demo.sh grupo [nome]      # consumer group (padrão notificacao; ou antifraude, bi, compliance): offset, lag, instância
+#   ./demo.sh compliance        # religa a notificação com o grupo compliance ligado (lê o histórico do tópico)
 #   ./demo.sh logs gravador     # acompanha o log de um serviço (emissor|gravador|consulta|notificacao)
 #   ./demo.sh down              # para os serviços e derruba os clusters, apagando os dados
 #
@@ -121,6 +122,7 @@ inicia() {
     mkdir -p "$RUN_DIR"
     # O client-id identifica a instância na saída do ./demo.sh grupo.
     [[ "$modulo" == notificacao ]] && extra=(--spring.profiles.active=demo --spring.kafka.client-id="$s")
+    [[ "$modulo" == notificacao && "${COMPLIANCE:-}" == ligado ]] && extra+=(--pix.compliance.ativo=true)
     [[ "$s" != "$modulo" ]] && extra+=(--server.port="$(porta "$s")")
     # O qpid-broker (Plano B) traz um logback.xml que silencia os logs: usamos o nosso.
     nohup "$JAVA21_HOME/bin/java" -jar "$jar" \
@@ -254,11 +256,11 @@ escala() {
 }
 
 grupo() {
-    local kno
+    local kno nome="${1:-notificacao}"
     kno="$(no_vivo kafka kafka)"
     [[ -n "$kno" ]] || falha "nenhum broker de pé"
-    passo "Kafka: consumer group notificacao no tópico comprovante-gravado"
-    KAFKA_NO="$kno" kafka_grupos --describe --group notificacao 2>&1 \
+    passo "Kafka: consumer group $nome no tópico comprovante-gravado"
+    KAFKA_NO="$kno" kafka_grupos --describe --group "$nome" 2>&1 \
         | grep -E "^GROUP|comprovante-gravado |has no active members" \
         | awk '{ if ($1 == "GROUP") print "PARTIÇÃO  OFFSET  FIM  LAG  INSTÂNCIA"; \
                  else if ($2 == "comprovante-gravado") { sub(/-[0-9]+$/, "", $9); printf "%-9s %-7s %-4s %-4s %s\n", $3, $4, $5, $6, $9 } \
@@ -285,6 +287,11 @@ case "${1:-}" in
     levanta) levanta "${2:-}" "${3:-}" ;;
     logs) logs "${2:-}" ;;
     escala) escala "${2:-}" ;;
-    grupo) grupo ;;
+    grupo) grupo "${2:-}" ;;
+    compliance)
+        passo "Religando a notificação com o grupo compliance ligado"
+        para notificacao
+        COMPLIANCE=ligado inicia notificacao
+        aguarda notificacao ;;
     *) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; exit 1 ;;
 esac

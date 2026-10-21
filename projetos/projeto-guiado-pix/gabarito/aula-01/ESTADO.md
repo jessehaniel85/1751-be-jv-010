@@ -5,7 +5,7 @@
 ## O que funciona
 - **3 serviços** com bases H2 **segregadas**: `comprovante-emissor` (8081), `comprovante-gravador` (8082), `comprovante-consulta` (8083).
 - **emissor**: `POST /comprovantes` valida as informações obrigatórias (agência=4, conta=5, dígito=1, valor>0, chave/tipo) → **202** com `identificador_comprovante`. Campo inválido → **400**.
-- **gravador**: entidade `ComprovanteEntity` + repositório + `GravadorService.gravar()` **persistem de verdade** — mas ainda **ninguém invoca** (a orquestração vem na Aula 2).
+- **gravador**: agregado `Comprovante` (raiz) com os value objects `ChavePix` e `Dinheiro` e o `StatusComprovante` (só avança de `ACEITO` para `GRAVADO`, via `marcarGravado()`) + repositório + `GravadorService.gravar()` **persistem de verdade** — mas ainda **ninguém invoca** (a orquestração vem na Aula 2).
 - **consulta**: `GET /comprovantes/{id}` ainda responde **404** (o caminho de dados/cache entra na Aula 3).
 
 ## Decisões (ADR)

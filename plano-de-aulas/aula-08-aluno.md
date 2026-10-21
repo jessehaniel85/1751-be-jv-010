@@ -71,7 +71,7 @@ public class NotificacaoService {
         if (repository.jaNotificado(e.comprovanteId())) {
             return; // idempotente: segunda execução não tem efeito adicional
         }
-        gateway.enviar(e.chavePixDestino(), e.comprovanteId());
+        gateway.enviar(e.chavePixDestino(), e.comprovanteId()).join(); // espera o envio antes de seguir
         repository.marcarNotificado(e.comprovanteId());
     }
 }
@@ -116,14 +116,16 @@ O conceito contraintuitivo é **"falhar rápido"**. Quando o circuito está aber
 public class GatewayCliente {
 
     @CircuitBreaker(name = "gatewayNotificacao", fallbackMethod = "fallback")
-    public void enviar(String destino, UUID comprovanteId) {
+    public CompletableFuture<Void> enviar(String destino, UUID comprovanteId) {
         gatewayHttp.post(destino, comprovanteId); // pode estourar timeout / 503
+        return CompletableFuture.completedFuture(null);
     }
 
     // chamado quando o circuito está aberto OU a chamada falha
-    private void fallback(String destino, UUID comprovanteId, Throwable t) {
+    private CompletableFuture<Void> fallback(String destino, UUID comprovanteId, Throwable t) {
         log.warn("Gateway indisponível ({}). Enfileirando para reenvio: {}", t.getMessage(), comprovanteId);
         reenvioRepository.agendar(comprovanteId); // degrada com elegância, não derruba
+        return CompletableFuture.completedFuture(null);
     }
 }
 ```
@@ -143,10 +145,13 @@ O circuit breaker não vem sozinho. Três padrões completam o kit, cada um atac
 ```java
 @Bulkhead(name = "gatewayNotificacao", type = Bulkhead.Type.THREADPOOL)
 @CircuitBreaker(name = "gatewayNotificacao", fallbackMethod = "fallback")
-public void enviar(String destino, UUID comprovanteId) {
+public CompletableFuture<Void> enviar(String destino, UUID comprovanteId) {
     gatewayHttp.post(destino, comprovanteId);
+    return CompletableFuture.completedFuture(null);
 }
 ```
+
+O bulkhead do tipo `THREADPOOL` só se aplica a métodos que devolvem `CompletableFuture`; num método `void`, o Resilience4j lança `IllegalStateException` (e o fallback do circuit breaker engole o erro).
 
 **Rate limiting (brevemente).** Contraria "a banda é infinita". Limita **quantas** chamadas você faz por unidade de tempo a uma dependência. Útil quando o terceiro impõe cota (o gateway aceita 100 req/s) ou quando você quer proteger uma dependência frágil de picos. No Resilience4j é o `@RateLimiter`; conceitualmente, é você **se autolimitando** antes que a dependência te puna com 429.
 
@@ -166,7 +171,8 @@ public class NotificacaoListener {
 
     @RetryableTopic(
             attempts = "4",                                  // 1 original + 3 retries
-            backoff = @Backoff(delay = 1000, multiplier = 2.0), // 1s, 2s, 4s
+            backoff = @Backoff(delay = 1000, multiplier = 2.0, random = true), // ~1s, 2s, 4s, com jitter
+            topicSuffixingStrategy = TopicSuffixingStrategy.SUFFIX_WITH_INDEX_VALUE, // -retry-0, -1, -2 (com jitter, o atraso não serve de nome)
             dltStrategy = DltStrategy.FAIL_ON_ERROR)          // esgotou → DLT
     @KafkaListener(topics = "comprovante-gravado", groupId = "notificacao")
     public void aoGravar(ComprovanteGravadoEvent e) {

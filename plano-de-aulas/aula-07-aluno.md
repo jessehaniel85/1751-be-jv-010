@@ -154,8 +154,8 @@ public class GravadorService {
 
         var evento = new ComprovanteGravadoEvent(
                 comprovante.getId(),
-                comprovante.getChavePixDestino(),
-                comprovante.getValor(),
+                comprovante.getDestino().valor(),
+                comprovante.getValor().valor(),
                 Instant.now());
 
         // chave = id do comprovante → mesma partição, ordem preservada

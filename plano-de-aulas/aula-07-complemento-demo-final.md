@@ -13,7 +13,7 @@ Leituras de apoio: [`aula-08-aluno.md`](aula-08-aluno.md) (resiliência), [`aula
 - **Docker** com Compose v2 (`docker compose version` responde).
 - **JDK 21.** O gabarito **não compila no JDK 25**: o erro aparece como `Unsupported class file major version` ou como uma falha do Byte Buddy. Se você tiver mais de um JDK, aponte o 21 com `JAVA21_HOME`, como mostrado mais abaixo.
 - **Maven 3.9+** no `PATH`. Em casa, as dependências vêm do Maven Central; não precisa do `settings.xml` do ambiente corporativo.
-- **`curl`** e um terminal **bash**. No macOS e no Linux funciona direto. No Windows, use o **WSL 2**, com o Docker Desktop integrado a ele. O Postman (§6) funciona em qualquer sistema.
+- **`curl`** e um terminal **bash**. No macOS e no Linux funciona direto. No Windows, use o **WSL 2**, com o Docker Desktop integrado a ele. O Postman (§8) funciona em qualquer sistema.
 - **Memória:** são 6 contêineres e 4 JVMs ao mesmo tempo. Numa medição de 21/10/2026, com tudo de pé, foram cerca de 1,5 GB nos contêineres e 0,6 GB nos serviços. Feche o que puder e confira a memória reservada ao Docker Desktop.
 - **Portas livres:**
   - RabbitMQ: 5672–5674 e 15672–15674;
@@ -77,54 +77,59 @@ Duas decisões são de **operação**, não de código, e as duas estão no `dem
 
 ---
 
-## 2. Resiliência: retry, DLT e circuit breaker
+## 2. Resiliência: retry, DLT, circuit breaker e bulkhead
 
 Abra na IDE o módulo `aula-08/comprovante-notificacao`:
 
-- **`NotificacaoListener`:** `@RetryableTopic` com 4 tentativas e espera de 1 s, dobrando a cada vez, mais o `@DltHandler`.
-- **`NotificacaoGateway`:** `@CircuitBreaker` com `fallbackMethod`.
-- **`application.yml`:** a configuração do circuito (`resilience4j.circuitbreaker`).
+- **`NotificacaoListener`:** `@RetryableTopic` com 4 tentativas, espera de ~1 s dobrando a cada vez e com *jitter* (`random = true`), mais o `@DltHandler`, que chama o `AlertaService`.
+- **`NotificacaoService`:** o aviso idempotente (`jaNotificado` / `marcarNotificado`).
+- **`GatewayCliente`:** `@Bulkhead` (pool de threads próprio), `@CircuitBreaker` e `@RateLimiter`, com o `fallback` que agenda reenvio.
+- **`application.yml`:** o circuito `gatewayNotificacao` (janela de 10, 50% de falha, 30 s aberto) e o rate limiter (100 chamadas por segundo).
 
-O serviço sobe com o perfil `demo`, que acrescenta um botão para simular a queda do gateway externo sem editar código (`POST /demo/gateway`; veja `GatewayDemoController`).
+O serviço sobe com o perfil `demo`, que acrescenta botões para derrubar ou deixar lento o gateway externo sem editar código (`/demo/gateway`; veja `GatewayDemoController` e `GatewayHttp`).
 
 | # | Faça | Antes de rodar, preveja | O que aparece |
 |---|---|---|---|
-| 1 | `./chamadas.sh falha on` e `./chamadas.sh emitir 2` | O gateway caiu. O retry vai tentar de novo? | Log da notificação: `Fallback de notificação …: gateway indisponível` e **mais nada**. Nenhum retry, nenhuma DLT |
-| 2 | `./chamadas.sh falha propaga` e `./chamadas.sh emitir` | E agora, que o fallback relança a exceção? | Quatro tentativas, com 1 s, 2 s e 4 s de intervalo, e depois a linha `caiu na DLT do tópico de notificação` |
-| 3 | `./chamadas.sh circuito`; emita mais um ou dois e repita | Quantas falhas até o circuito abrir? | Muda de `state:CLOSED` para `state:OPEN`, com a taxa de falha acima de 50%. Log: `CircuitBreaker 'notificacao-gateway' is OPEN and does not permit further calls` |
-| 4 | `./chamadas.sh falha off`, espere ~10 s, `./chamadas.sh emitir 3` e `./chamadas.sh circuito` | Quem decide que o gateway voltou? | Volta a `state:CLOSED`. Passou pelo meio-aberto, com algumas chamadas de teste |
+| 1 | `./chamadas.sh falha on`, `./chamadas.sh emitir 2` e `./chamadas.sh reatores` | O gateway caiu. O retry vai tentar de novo? | `Gateway indisponível (gateway indisponível). Enfileirando para reenvio: <id>`, uma vez por comprovante; `reenvios_pendentes=2`. Nenhum retry, nenhuma DLT |
+| 2 | `./chamadas.sh falha propaga`, `./chamadas.sh emitir` e `./chamadas.sh reatores` | E agora, que o fallback devolve a falha? | Quatro tentativas, com intervalos que **variam** (no ensaio: 1,7 s, 2,2 s e 4,9 s); depois `caiu na DLT do tópico de notificação: falha permanente, precisa de olhar humano` e `falhas_permanentes=1` |
+| 3 | Emita mais um ou dois e `./chamadas.sh circuito` | Quantas falhas até o circuito abrir? | `failureRate:90.0% … state:OPEN`. Log: `CircuitBreaker 'gatewayNotificacao' is OPEN and does not permit further calls` |
+| 4 | `./chamadas.sh falha off`, espere **30 s**, `./chamadas.sh emitir 3` e `./chamadas.sh circuito` | Quem decide que o gateway voltou? | `state:CLOSED`. Depois dos 30 s, as chamadas seguintes passam pelo meio-aberto (3 de teste) e fecham o circuito |
+| 5 | `./chamadas.sh lento 2000`, `./chamadas.sh bulkhead 10` e `./chamadas.sh circuito` | O gateway ficou lento, não caiu. O que acontece com 10 chamadas ao mesmo tempo? | `chamadas=10, atendidas=4, enviadas_para_reenvio=6`: o pool tem 2 threads e fila de 2 (perfil `demo`); as outras 6 recebem `Bulkhead 'gatewayNotificacao' is full`. E o circuito **abre** (`failureRate:60.0%`) |
+| 6 | `./chamadas.sh falha off` (zera a lentidão) | — | Gateway normal; o circuito fecha sozinho depois de 30 s e das chamadas de teste |
 
 **Para pensar:**
 
-- **No passo 1:** o fallback devolveu um valor padrão e a falha **sumiu**. O offset andou e a notificação se perdeu. Isso é resiliência ou é esconder erro? Num GET de catálogo, a resposta degradada é aceitável; numa notificação de PIX, a falha precisa voltar para o retry e para a DLT (`aula-08-aluno.md`, §5 e §7).
-- **No passo 2:** por que o intervalo dobra em vez de ser fixo? (§3, *retry storm*.) E por que o retry só é seguro porque o consumidor é idempotente? (§4.)
+- **No passo 1:** o fallback **degradou com elegância**: agendou o reenvio em vez de derrubar o consumo. A notificação não se perdeu; ficou para depois. E se o reenvio também falhar? Quem olha a fila de reenvio? (`aula-08-aluno.md`, §5.)
+- **No passo 2:** por que o intervalo dobra em vez de ser fixo, e por que ele varia? (§3, *retry storm* e *jitter*.) E por que o retry só é seguro porque o consumidor é idempotente? (§4.)
 - **No passo 3:** com o circuito aberto, quem deixou de sofrer: o gateway ou a gente?
-- **Onde estão os tópicos de retry?** Rode `./demo.sh lideres` ou o `kafka-topics.sh --list` dentro de um broker e procure por `comprovante-gravado-retry-1000`, `-retry-2000`, `-retry-4000` e `-dlt`.
+- **No passo 5:** o circuito contou as recusas do bulkhead como falha. Isso é bom ou ruim? Num gateway lento, faz sentido parar de chamar por 30 s?
+- **Onde estão os tópicos de retry?** Rode `kafka-topics.sh --list` dentro de um broker: `comprovante-gravado-retry-0`, `-retry-1`, `-retry-2` e `-dlt`. Com *jitter*, o atraso não serve de nome, e o código usa o sufixo por índice (`topicSuffixingStrategy`).
 
 ---
 
-## 3. Contract testing: o PACT consulta ↔ gravador
+## 3. Contract testing: HTTP e mensagens
 
-Em outro terminal, entre em `projetos/projeto-guiado-pix/gabarito/aula-08`, com o JDK 21 no `JAVA_HOME`. Deixe os clusters de pé: o teste do provedor sobe o contexto Spring do gravador, que conecta nos brokers.
+Em outro terminal, entre em `projetos/projeto-guiado-pix/gabarito/aula-08`, com o JDK 21 no `JAVA_HOME`. São três contratos, cada um com um consumidor (gera o pact) e um provedor (verifica):
+
+| Contrato | Consumidor (gera) | Provedor (verifica) |
+|---|---|---|
+| HTTP `GET /comprovantes/{id}` | `comprovante-consulta`: `GravadorContractTest` (2 interações: existe e não existe) | `comprovante-gravador`: `GravadorVerificacaoTest` |
+| Evento `comprovante-gravado` (Kafka) | `comprovante-notificacao`: `EventoGravadoContractTest` | `comprovante-gravador`: `EventoGravadoVerificacaoTest` |
+| Comando da fila `gravacao.q` (RabbitMQ) | `comprovante-gravador`: `ComandoGravacaoContractTest` | `comprovante-emissor`: `ComandoGravacaoVerificacaoTest` |
 
 ```bash
-# 1. Consumidor (consulta): declara o que precisa e gera o pact
-mvn -pl comprovante-consulta test | grep -E "Tests run|BUILD"
-cat comprovante-consulta/target/pacts/comprovante-consulta-comprovante-gravador.json
-
-# 2. Provedor (gravador): verifica o pact contra o serviço real
-mvn -pl comprovante-gravador test | grep -E "Tests run|BUILD|missing"
+mvn test | grep -E "Tests run:|BUILD"
 ```
 
-Os dois mostram `Tests run: 1, Failures: 0`. O teste do provedor sobe o Spring e pode levar perto de 1 minuto.
+Todos passam: 2 testes na consulta, 1 na notificação, 1 no emissor e 4 no gravador. O teste HTTP do gravador sobe o Spring e pode levar perto de 1 minuto. O consumidor grava o pact em `target/pacts/`; o provedor lê de `src/test/resources/pacts/` (num time real, o Pact Broker faz esse transporte).
 
-**Agora quebre de propósito:** a consulta passa a exigir um campo que o gravador não devolve.
+**Agora quebre de propósito o contrato HTTP:** a consulta passa a exigir um campo que o gravador não devolve.
 
 ```bash
 P=comprovante-gravador/src/test/resources/pacts/comprovante-consulta-comprovante-gravador.json
 cp "$P" /tmp/pact-original.json
-# no editor: no body da resposta, depois de "nome": "Giovanni", acrescente  "tipoDocumento": "CPF",
-mvn -pl comprovante-gravador test | grep -E "Tests run|BUILD|missing"
+# no editor: no body da resposta, depois de "chavePix": "joao@pix.com", acrescente  "tipoDocumento": "CPF",
+mvn -pl comprovante-gravador test -Dtest=GravadorVerificacaoTest | grep -E "Tests run|BUILD|missing"
 cp /tmp/pact-original.json "$P"       # restaura
 ```
 
@@ -134,9 +139,35 @@ cp /tmp/pact-original.json "$P"       # restaura
 - o emissor publicava o comando na fila em `snake_case` (`numero_agencia`);
 - o gravador lia em `camelCase` (`numeroAgencia`), e o id chegava nulo.
 
-O contrato HTTP consulta↔gravador tinha PACT; o contrato da **mensagem** emissor→gravador não tinha nenhum. A correção foi uma linha no `MessagingConfig` do gravador (veja nas aulas 4 a 8).
+O contrato HTTP tinha PACT; o da **mensagem** emissor→gravador não tinha nenhum. A correção foi uma linha no `MessagingConfig` do gravador. Hoje o gabarito tem o *message pact* do comando. Reproduza o defeito e veja o build pegar:
 
-> **Pergunta:** que teste teria pegado esse defeito no build? (Um *message pact*, `aula-08-contract-aluno.md` §8.) No seu projeto de grupo, quais contratos de mensagem estão sem teste?
+```bash
+# no editor, em comprovante-gravador/.../MessagingConfig.java, troque o conversor por
+#   return new Jackson2JsonMessageConverter(mapper);
+mvn -pl comprovante-gravador test -Dtest=ComandoGravacaoContractTest | grep -E "Tests run|BUILD|Expecting"
+# desfaça a troca
+```
+
+Rodando: `Expecting actual not to be null` e `Failures: 1`. O defeito que derrubou o projeto-guia vira um build vermelho.
+
+> **Pergunta:** no seu projeto de grupo, quais contratos de mensagem estão sem teste?
+
+---
+
+## 3.1 Um fato, quatro grupos: notificação, antifraude, BI e compliance
+
+O gravador publica **um** evento por comprovante. No módulo de notificação, quatro consumer groups o leem, cada um com o seu offset (`aula-07-aluno.md`, passos 3 e 4): `NotificacaoListener`, `AntifraudeListener`, `BiListener` e `ComplianceListener`.
+
+| # | Faça | Antes de rodar, preveja | O que aparece |
+|---|---|---|---|
+| 1 | `./chamadas.sh emitir 2` e `./demo.sh logs notificacao` | Quantas linhas por comprovante? | Uma de cada reator: `Enviando notificação…`, `Antifraude avaliando o padrão…` e `BI: N comprovante(s), total …` |
+| 2 | `./chamadas.sh reatores` e `./demo.sh grupo bi` | O compliance já viu algum? | `compliance_arquivados=0`: o grupo `compliance` nasce **desligado** e ainda nem existe no Kafka |
+| 3 | `./demo.sh compliance` e, depois de uns 10 s, `./chamadas.sh reatores` | O compliance vai ver só o que chegar daqui para frente? | `compliance_arquivados` igual a **todos** os comprovantes já gravados: grupo novo, com `auto-offset-reset: earliest`, lê o log desde o início |
+
+**Para pensar:**
+
+- **Adicionar o compliance não mexeu no gravador.** O sistema cresceu por adição, não por modificação.
+- **No passo 3, o BI zerou** (`bi_quantidade=0`): a notificação reiniciou e a contagem vivia em memória. Mas o grupo `bi` **não** releu o histórico: o offset dele estava guardado no Kafka. Onde a volumetria precisaria morar para sobreviver ao reinício?
 
 ---
 
@@ -260,9 +291,9 @@ Importe os dois arquivos de `demo/` (*Import* → arraste a collection e o envir
   - consultar;
   - ler direto no gravador;
   - emitir com agência inválida, que dá 400.
-- **2. Resiliência (perfil demo):** ver o estado do gateway, ligar a falha (engolida ou propagada), voltar ao normal, e ver o estado e os eventos do circuito.
+- **2. Resiliência (perfil demo):** ver o estado do gateway, ligar a falha (com reenvio agendado ou propagada até a DLT), deixar o gateway lento e disparar a rajada do bulkhead, voltar ao normal, ver o estado e os eventos do circuito e os contadores dos reatores.
 
-Cada requisição tem testes; rode a collection inteira pelo *Runner* com tudo de pé. A collection não derruba nós nem serviços: para as partes 4 a 7, use o `demo.sh`.
+Cada requisição tem testes; rode a collection inteira pelo *Runner* com tudo de pé. A collection não derruba nós nem serviços: para as partes 3.1 e 4 a 7, use o `demo.sh`.
 
 ---
 
@@ -286,7 +317,10 @@ docker ps               # não deve sobrar nenhum contêiner cluster-*
 | `Unsupported class file major version` ou erro de Byte Buddy no `mvn` | O Maven rodou com outro JDK: `export JAVA_HOME=/caminho/do/jdk-21` antes |
 | Serviço `FORA` no `./demo.sh status` | `./demo.sh logs <serviço>`; depois `./demo.sh apps-down` e `./demo.sh apps-up` |
 | Log da notificação mudo | Suba pelo `demo.sh`, que passa o `logback-demo.xml` |
-| Teste do provedor (PACT) trava ao subir | Os brokers estão fora do ar: `./demo.sh status` |
+| Teste HTTP do provedor (PACT) demora | É esperado: ele sobe o Spring do gravador e leva perto de 1 minuto, com ou sem brokers |
+| `Did not find a test class method annotated with @State(...)` | O pact em `target/pacts/` acumulou interações antigas: apague `target/pacts/`, rode o consumidor de novo e copie o arquivo para `src/test/resources/pacts/` |
 | O circuito não abre | A janela é de 10 chamadas, com 50% de falha. Emita mais com `falha propaga`: cada comprovante gera 4 chamadas |
+| O circuito não fecha | Ele fica aberto 30 s e só passa a meio-aberto quando chega uma chamada: emita alguns comprovantes depois dos 30 s. Confira se a falha e a lentidão estão desligadas (`./chamadas.sh falha off`) |
+| `compliance_arquivados=0` depois do `./demo.sh compliance` | Espere uns 10 s (o grupo novo precisa entrar e ler o tópico) e repita `./chamadas.sh reatores` |
 | Contêiner reiniciando ou máquina lenta | Falta memória: feche aplicações, aumente a memória do Docker Desktop ou faça uma parte por vez (`./demo.sh clusters-up` sobe só os clusters) |
 | No Windows, `bad interpreter` ou `\r` nos scripts | O Git converteu as quebras de linha. Dentro do WSL: `sed -i 's/\r$//' demo.sh chamadas.sh` |

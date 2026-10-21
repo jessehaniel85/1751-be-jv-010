@@ -3,23 +3,27 @@
 **Foco:** travar a compatibilidade entre serviços no CI, sem subir tudo junto.
 
 ## O que funciona / o que mudou
-- **Contrato consulta ↔ gravador** (GET `/interno/comprovantes/{id}`):
-  - **Consumidor** (`comprovante-consulta`): `GravadorContractTest` declara a expectativa e
-    **gera o pact**, validando o `GravadorReadClient` contra um mock.
-  - **Provedor** (`comprovante-gravador`): `GravadorProviderTest` **verifica** o pact
-    (`src/test/resources/pacts/...json`) contra o serviço real, com `@State` semeando o dado.
+- **Contrato consulta ↔ gravador** (GET `/comprovantes/{id}`):
+  - **Consumidor** (`comprovante-consulta`): `GravadorContractTest` declara as duas interações (existe → 200,
+    não existe → 404) e **gera o pact**, validando o `GravadorClient` contra um mock.
+  - **Provedor** (`comprovante-gravador`): `GravadorVerificacaoTest` **verifica** o pact (`@PactFolder("pacts")`)
+    contra o serviço real, com dois `@State` (semeia e garante a ausência).
+- **Message pacts** (sem broker no teste):
+  - evento `comprovante-gravado`: consumidor `EventoGravadoContractTest` (notificação), provedor
+    `EventoGravadoVerificacaoTest` (roda o `GravadorService` e serializa como a produção);
+  - comando da fila: consumidor `ComandoGravacaoContractTest` (gravador), provedor
+    `ComandoGravacaoVerificacaoTest` (emissor). É o teste que pega a divergência snake_case × camelCase.
 - O pact é **Docker-free** (arquivo em disco) — funciona igual nos Planos A/B/C.
 
 ## Por que consulta↔gravador (e não emissor↔gravador)
 Desde a Aula 4 a integração emissor→gravador é por **fila** (contrato de mensagem), não HTTP.
-O par **HTTP** que permanece é consulta→gravador — daí o contract test aqui. (Pact também
-suporta *message pacts* para o fluxo de fila — fica como extensão.)
+O par **HTTP** que permanece é consulta→gravador; a fila e o tópico têm *message pacts*.
 
 ## Rodando
-- Consumidor: `mvn -pl comprovante-consulta test` gera o pact em `target/pacts`.
-- Provedor: `mvn -pl comprovante-gravador test` verifica o pact.
-  O provedor sobe o contexto Spring; em ambiente sem Kafka/RabbitMQ, ative um profile de teste
-  que desabilite a mensageria (ou aponte para EmbeddedKafka/Qpid) para o app iniciar.
+- `mvn test` roda os 8 testes: consulta 2, notificação 1, emissor 1 e gravador 4.
+- Cada consumidor grava o pact em `target/pacts`; copie-o para `src/test/resources/pacts` do provedor
+  (num time real, o Pact Broker faz esse transporte). Se o `target/pacts` acumular interações antigas, apague a pasta.
+- A verificação HTTP do gravador sobe o contexto Spring e leva perto de 1 minuto, com ou sem brokers.
 
 ## Fim do gabarito
 A Aula 9 é a banca de defesa — sem incremento de código.
@@ -29,8 +33,15 @@ A Aula 9 é a banca de defesa — sem incremento de código.
   `camelCase` e todo comprovante caía na DLQ (id nulo). O conversor da fila do gravador agora lê
   `snake_case`; o HTTP interno segue em `camelCase` (contrato PACT com a consulta).
 - **Circuit breaker:** faltava `spring-boot-starter-aop` na notificação; sem ele o `@CircuitBreaker` não agia.
-- **PACT consumidor:** `GravadorContractTest` declara `pactVersion = V3` (o Pact 4.6 assume V4 por padrão e o teste falhava).
-- **Perfil `demo`** (só a notificação): `POST /demo/gateway?falhar=&propagar=` liga e desliga a falha do
-  gateway sem editar código; actuator expõe `circuitbreakers` e `circuitbreakerevents`.
-  `propagar=false` mostra o fallback engolindo a falha (sem retry/DLT); `propagar=true` leva à DLT.
+- **PACT consumidor:** `GravadorContractTest` declara `pactVersion = V3` (V4 com `RequestResponsePact` falha no Pact 4.6).
+- **Perfil `demo`** (só a notificação): `POST /demo/gateway?falhar=&propagar=&lentidao=` controla o gateway simulado
+  sem editar código; `POST /demo/gateway/rajada?n=` dispara chamadas simultâneas (bulkhead de 2 threads e fila de 2);
+  `GET /demo/reatores` mostra BI, compliance, reenvios e falhas permanentes. O actuator expõe `circuitbreakers`,
+  `circuitbreakerevents`, `bulkheads` e `ratelimiters`. `propagar=false` agenda reenvio (sem retry/DLT);
+  `propagar=true` leva à DLT.
+
+## Alinhamento ao material (21/10/2026)
+O gabarito das aulas 1 a 8 passou a seguir o código do material do aluno (nomes, modelo de domínio, topologia,
+resiliência e contratos). Onde o material se contradizia, não compilava ou estava errado, o material é que foi
+ajustado ao código.
 - Demo sobre clusters RabbitMQ e Kafka: ver `../demo/` e o roteiro `plano-de-aulas/aula-07-complemento-demo-final.md` (na raiz do repositório).

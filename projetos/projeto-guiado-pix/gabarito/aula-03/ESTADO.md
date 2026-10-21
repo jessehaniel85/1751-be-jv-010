@@ -3,10 +3,12 @@
 **Foco:** aliviar leituras repetidas sem servir dado inconsistente.
 
 ## O que funciona
-- **consulta**: `GET /comprovantes/{id}` busca **primeiro no cache** (`@Cacheable`);
-  no miss, lê o **gravador** (`GET /interno/comprovantes/{id}`) com até **3 retentativas**,
-  **popula o cache** e retorna; ausência real → **404** (não cacheado, via `unless`).
-- **gravador**: novo endpoint de leitura + projeção `ComprovanteView`.
+- **consulta**: `ConsultaComprovante` busca **primeiro no cache** (`ComprovanteCache`, cache-aside);
+  no miss, lê o **gravador** (`GravadorClient`, `GET /comprovantes/{id}`, timeout de 2 s) com até
+  **3 retentativas** e backoff de 100, 200 e 400 ms (`consulta.backoff-inicial`), **popula o cache**
+  e retorna o `ComprovanteDTO`; ausência real → **404** (`ComprovanteNaoEncontrado`, nada no cache).
+- **gravador**: novo endpoint de leitura com a projeção `ComprovanteView` (`id`, `valor`, `chavePix`,
+  `dataHora`, `status`, …), em camelCase.
 - Cache configurável (TTL 5min, Caffeine no Plano B; trocar por Redis no Plano A sem mexer no serviço).
 
 ## Como rodar
