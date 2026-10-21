@@ -8,6 +8,11 @@
 #   ./demo.sh status            # contêineres, saúde dos serviços, filas e tópico (quem é líder)
 #   ./demo.sh derruba rabbit 1  # para um nó (rabbit 1..3 | kafka 1..3)
 #   ./demo.sh levanta rabbit 1  # religa o nó
+#   ./demo.sh levanta rabbit todos   # religa os três nós juntos (rabbit | kafka)
+#   ./demo.sh derruba gravador  # para um serviço (emissor|gravador|consulta|notificacao|notificacao-2|-3)
+#   ./demo.sh levanta gravador  # religa o serviço
+#   ./demo.sh escala 3          # 1 a 3 instâncias da notificação no mesmo consumer group
+#   ./demo.sh grupo             # consumer group notificacao: partição, offset, lag e instância
 #   ./demo.sh logs gravador     # acompanha o log de um serviço (emissor|gravador|consulta|notificacao)
 #   ./demo.sh down              # para os serviços e derruba os clusters, apagando os dados
 #
@@ -29,6 +34,7 @@ SERVICOS=(gravador emissor consulta notificacao)
 porta() {
     case "$1" in
         emissor) echo 8081 ;; gravador) echo 8082 ;; consulta) echo 8083 ;; notificacao) echo 8084 ;;
+        notificacao-2) echo 8085 ;; notificacao-3) echo 8086 ;;
     esac
 }
 
@@ -46,6 +52,10 @@ rabbitctl() { docker compose -f "$CLUSTERS_DIR/rabbitmq/docker-compose.yml" exec
 kafka_topics() {
     docker compose -f "$CLUSTERS_DIR/kafka/docker-compose.yml" exec -T "${KAFKA_NO:-kafka-1}" \
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 "$@"
+}
+kafka_grupos() {
+    docker compose -f "$CLUSTERS_DIR/kafka/docker-compose.yml" exec -T "${KAFKA_NO:-kafka-1}" \
+        /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 "$@"
 }
 
 # Primeiro nó de pé de um cluster, para os comandos de inspeção não dependerem do nó 1.
@@ -98,44 +108,62 @@ clusters_down() {
     docker compose -f "$CLUSTERS_DIR/rabbitmq/docker-compose.yml" down -v
 }
 
-apps_up() {
+rodando() { [[ -f "$RUN_DIR/$1.pid" ]] && kill -0 "$(cat "$RUN_DIR/$1.pid")" 2>/dev/null; }
+
+# Sobe um serviço em segundo plano. notificacao-2 e notificacao-3 são instâncias extras da
+# notificação, em outra porta e no mesmo consumer group.
+inicia() {
+    local s="$1" modulo="${1%-[23]}" jar
+    local extra=()
+    jar="$GABARITO/comprovante-$modulo/target/comprovante-$modulo-0.0.1-SNAPSHOT.jar"
+    [[ -f "$jar" ]] || falha "$jar não existe (rode ./demo.sh preparar)"
+    if rodando "$s"; then echo "$s já está rodando"; return; fi
     mkdir -p "$RUN_DIR"
-    local s jar extra
-    for s in "${SERVICOS[@]}"; do
-        jar="$GABARITO/comprovante-$s/target/comprovante-$s-0.0.1-SNAPSHOT.jar"
-        [[ -f "$jar" ]] || falha "$jar não existe (rode ./demo.sh preparar)"
-        if [[ -f "$RUN_DIR/$s.pid" ]] && kill -0 "$(cat "$RUN_DIR/$s.pid")" 2>/dev/null; then
-            echo "$s já está rodando"; continue
-        fi
-        extra=()
-        [[ "$s" == notificacao ]] && extra=(--spring.profiles.active=demo)
-        # O qpid-broker (Plano B) traz um logback.xml que silencia os logs: usamos o nosso.
-        nohup "$JAVA21_HOME/bin/java" -jar "$jar" \
-            --logging.config="$DEMO_DIR/logback-demo.xml" ${extra[@]+"${extra[@]}"} \
-            > "$RUN_DIR/$s.log" 2>&1 &
-        echo $! > "$RUN_DIR/$s.pid"
-        echo "$s iniciado (porta $(porta "$s"), log em demo/.run/$s.log)"
+    # O client-id identifica a instância na saída do ./demo.sh grupo.
+    [[ "$modulo" == notificacao ]] && extra=(--spring.profiles.active=demo --spring.kafka.client-id="$s")
+    [[ "$s" != "$modulo" ]] && extra+=(--server.port="$(porta "$s")")
+    # O qpid-broker (Plano B) traz um logback.xml que silencia os logs: usamos o nosso.
+    nohup "$JAVA21_HOME/bin/java" -jar "$jar" \
+        --logging.config="$DEMO_DIR/logback-demo.xml" ${extra[@]+"${extra[@]}"} \
+        > "$RUN_DIR/$s.log" 2>&1 &
+    echo $! > "$RUN_DIR/$s.pid"
+    echo "$s iniciado (porta $(porta "$s"), log em demo/.run/$s.log)"
+}
+
+aguarda() {
+    local i
+    for i in $(seq 1 60); do
+        curl -sf "localhost:$(porta "$1")/actuator/health" >/dev/null && break
+        sleep 1
     done
+    printf '%-14s %s\n' "$1" "$(saude "$1" | grep . || echo FORA)"
+}
+
+para() {
+    [[ -f "$RUN_DIR/$1.pid" ]] || return 0
+    local pid i
+    pid="$(cat "$RUN_DIR/$1.pid")"
+    if kill "$pid" 2>/dev/null; then
+        # O desligamento do Spring termina o que está em andamento: espera o processo sair.
+        for i in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+        echo "$1 parado"
+    else
+        echo "$1 já estava parado"
+    fi
+    rm -f "$RUN_DIR/$1.pid"
+}
+
+apps_up() {
+    local s
+    for s in "${SERVICOS[@]}"; do inicia "$s"; done
     passo "Aguardando os serviços responderem"
-    for s in "${SERVICOS[@]}"; do
-        local i
-        for i in $(seq 1 60); do
-            curl -sf "localhost:$(porta "$s")/actuator/health" >/dev/null && break
-            sleep 1
-        done
-        printf '%-12s %s\n' "$s" "$(saude "$s" | grep . || echo FORA)"
-    done
+    for s in "${SERVICOS[@]}"; do aguarda "$s"; done
 }
 
 apps_down() {
     passo "Parando os serviços"
     local s
-    for s in "${SERVICOS[@]}"; do
-        if [[ -f "$RUN_DIR/$s.pid" ]]; then
-            kill "$(cat "$RUN_DIR/$s.pid")" 2>/dev/null && echo "$s parado" || echo "$s já estava parado"
-            rm -f "$RUN_DIR/$s.pid"
-        fi
-    done
+    for s in "${SERVICOS[@]}" notificacao-2 notificacao-3; do para "$s"; done
 }
 
 lideres() {
@@ -160,8 +188,9 @@ status() {
     docker ps -a --filter name=cluster- --format 'table {{.Names}}\t{{.Status}}'
     passo "Serviços"
     local s
-    for s in "${SERVICOS[@]}"; do
-        printf '%-12s :%s  %s\n' "$s" "$(porta "$s")" "$(saude "$s" | grep . || echo FORA)"
+    for s in "${SERVICOS[@]}" notificacao-2 notificacao-3; do
+        [[ "$s" == notificacao-* ]] && ! rodando "$s" && continue
+        printf '%-14s :%s  %s\n' "$s" "$(porta "$s")" "$(saude "$s" | grep . || echo FORA)"
     done
     lideres
 }
@@ -177,20 +206,68 @@ no_do_cluster() {
 }
 
 derruba() {
+    if [[ -n "$(porta "${1:-}")" ]]; then
+        passo "Parando o serviço $1"
+        para "$1"
+        return
+    fi
     read -r cluster servico <<< "$(no_do_cluster "${1:-}" "${2:-}")"
     passo "Parando $servico"
     docker compose -f "$CLUSTERS_DIR/$cluster/docker-compose.yml" stop "$servico"
 }
 
 levanta() {
+    if [[ -n "$(porta "${1:-}")" ]]; then
+        passo "Religando o serviço $1"
+        inicia "$1"
+        aguarda "$1"
+        return
+    fi
+    if [[ "${2:-}" == todos ]]; then
+        # Depois de uma queda total, cada nó espera os outros para remontar o cluster:
+        # subir um por vez com --wait trava no primeiro. Os três juntos se encontram.
+        read -r cluster _ <<< "$(no_do_cluster "${1:-}" 1)"
+        passo "Religando os três nós de $cluster juntos"
+        # No ensaio, um nó do RabbitMQ às vezes sai com erro na primeira subida e volta na segunda.
+        local tentativa
+        for tentativa in 1 2 3; do
+            docker compose -f "$CLUSTERS_DIR/$cluster/docker-compose.yml" up -d --wait "$1-1" "$1-2" "$1-3" && return
+            echo "um nó não subiu (tentativa $tentativa de 3); tentando de novo"
+        done
+        falha "o cluster não voltou; veja: docker compose -f $CLUSTERS_DIR/$cluster/docker-compose.yml logs"
+    fi
     read -r cluster servico <<< "$(no_do_cluster "${1:-}" "${2:-}")"
     passo "Religando $servico"
     docker compose -f "$CLUSTERS_DIR/$cluster/docker-compose.yml" up -d --wait "$servico"
 }
 
+# Ajusta o número de instâncias da notificação (1 a 3) no mesmo consumer group.
+escala() {
+    local n="${1:-}" k
+    [[ "$n" =~ ^[1-3]$ ]] || falha "use: escala 1|2|3"
+    passo "Notificação com $n instância(s)"
+    for k in 2 3; do
+        if (( k <= n )); then inicia "notificacao-$k"; aguarda "notificacao-$k"; else para "notificacao-$k"; fi
+    done
+    sleep 5   # tempo para o rebalanceamento do grupo
+    grupo
+}
+
+grupo() {
+    local kno
+    kno="$(no_vivo kafka kafka)"
+    [[ -n "$kno" ]] || falha "nenhum broker de pé"
+    passo "Kafka: consumer group notificacao no tópico comprovante-gravado"
+    KAFKA_NO="$kno" kafka_grupos --describe --group notificacao 2>&1 \
+        | grep -E "^GROUP|comprovante-gravado |has no active members" \
+        | awk '{ if ($1 == "GROUP") print "PARTIÇÃO  OFFSET  FIM  LAG  INSTÂNCIA"; \
+                 else if ($2 == "comprovante-gravado") { sub(/-[0-9]+$/, "", $9); printf "%-9s %-7s %-4s %-4s %s\n", $3, $4, $5, $6, $9 } \
+                 else print }'
+}
+
 logs() {
     local s="${1:-}"
-    [[ -n "$(porta "$s")" ]] || falha "use: logs emissor|gravador|consulta|notificacao"
+    [[ -n "$(porta "$s")" ]] || falha "use: logs emissor|gravador|consulta|notificacao|notificacao-2|notificacao-3"
     tail -n 30 -f "$RUN_DIR/$s.log"
 }
 
@@ -207,5 +284,7 @@ case "${1:-}" in
     derruba) derruba "${2:-}" "${3:-}" ;;
     levanta) levanta "${2:-}" "${3:-}" ;;
     logs) logs "${2:-}" ;;
-    *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    escala) escala "${2:-}" ;;
+    grupo) grupo ;;
+    *) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; exit 1 ;;
 esac

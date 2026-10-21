@@ -1,6 +1,6 @@
 # Complemento: a demo final do projeto-guia em casa (resiliência, contract testing e clusters)
 
-> **Tempo estimado:** ~1h para fazer tudo, ou ~20 min por parte. É a demonstração da aula de 21/10, agora para você repetir no seu computador pessoal. O projeto-guia inteiro (gabarito `aula-08`: emissor, gravador, consulta e notificação) roda sobre um RabbitMQ de 3 nós e um Kafka de 3 brokers. Você liga e desliga falhas, quebra um contrato de propósito e derruba nós com tráfego passando. Antes de cada experimento há uma pergunta. **Responda antes de rodar**: o aprendizado está na diferença entre o que você previu e o que aconteceu.
+> **Tempo estimado:** ~1h30 para fazer tudo, ou ~15 min por parte. É a demonstração da aula de 21/10, agora para você repetir no seu computador pessoal. O projeto-guia inteiro (gabarito `aula-08`: emissor, gravador, consulta e notificação) roda sobre um RabbitMQ de 3 nós e um Kafka de 3 brokers. Você liga e desliga falhas, quebra um contrato de propósito derruba nós com tráfego passando, derruba serviços e escala a notificação num consumer group. Antes de cada experimento há uma pergunta. **Responda antes de rodar**: o aprendizado está na diferença entre o que você previu e o que aconteceu.
 
 Leituras de apoio: [`aula-08-aluno.md`](aula-08-aluno.md) (resiliência), [`aula-08-contract-aluno.md`](aula-08-contract-aluno.md) (contract testing) e [`aula-07-complemento-clusters.md`](aula-07-complemento-clusters.md) (clusters sem a aplicação).
 
@@ -18,7 +18,7 @@ Leituras de apoio: [`aula-08-aluno.md`](aula-08-aluno.md) (resiliência), [`aula
 - **Portas livres:**
   - RabbitMQ: 5672–5674 e 15672–15674;
   - Kafka: 19092, 29092 e 39092;
-  - serviços: 8081 a 8084.
+  - serviços: 8081 a 8084, e 8085 e 8086 para as instâncias extras da notificação (§7).
 
   Se o `docker-compose.yml` simples do gabarito estiver de pé, derrube-o antes: `docker compose -p gabarito-pix down`.
 
@@ -155,11 +155,15 @@ A fila `gravacao.q` é `quorum` e tem um líder e três membros. Anote quem é o
 | 1 | `./demo.sh derruba rabbit N`, com N = o líder, e depois `./chamadas.sh emitir 2` e `./chamadas.sh consultar` | Com o líder fora, o PIX para? | 202, 202 e 200. Outro nó vira líder (`./demo.sh lideres`). No log do emissor, um `Connection reset` seguido de reconexão automática |
 | 2 | Derrube mais um nó (sobra 1 de 3) e depois `./chamadas.sh emitir` e `./chamadas.sh consultar` | Sem maioria, o emissor recusa o comprovante? | **202 no emissor**, mas a consulta dá **404**. Nenhum erro no log |
 | 3 | `./demo.sh levanta rabbit X` para os dois nós e depois `./chamadas.sh consultar` | E agora? | **200**: a mensagem ficou retida e foi gravada quando a maioria voltou |
+| 4 | Derrube os três nós e depois `./chamadas.sh emitir` e `./chamadas.sh saude` | E com zero nós, o emissor ainda diz "aceito"? | **HTTP 500**, sem id. O `health` do emissor e do gravador passa a `DOWN` |
+| 5 | `./demo.sh levanta rabbit todos` e depois `./chamadas.sh emitir` e `./chamadas.sh consultar` | Dá para religar um nó por vez? | Os três sobem juntos em uns 15 s; depois, 202 e 200, sem reiniciar nenhum serviço |
 
 **Para pensar:**
 
 - **No passo 2:** o emissor respondeu "aceito" sem a fila ter confirmado. Por quê? Ele não usa *publisher confirms* (Aula 6).
 - **No passo 3:** deu certo, mas era garantido? Sem confirmação do broker, o resultado é **indefinido**. Funcionou aqui; não é promessa.
+- **Nos passos 2 e 4:** com 1 nó o sistema **mente** (diz "aceito" sem a fila confirmar); com 0 nós ele **falha à vista** (500). Qual dos dois é pior para o cliente do PIX?
+- **No passo 5:** depois de uma queda total, cada nó espera os outros para remontar o cluster. Se você religar só um (`./demo.sh levanta rabbit 1`), o comando fica parado, esperando. Não é defeito: o nó não sabe se a cópia dele é a mais nova. Experimente e destrave com `./demo.sh levanta rabbit todos` em outro terminal.
 
 ---
 
@@ -187,7 +191,66 @@ São 3 partições, cada uma com um líder, e o `Isr` (as réplicas em dia) list
 
 ---
 
-## 6. No Postman
+## 6. Um serviço cai, os outros seguem
+
+Até aqui caíram os brokers. Agora cai a **aplicação**, com os brokers inteiros. O broker guarda o que chegou e entrega quando o consumidor volta: na fila, a mensagem espera; no tópico, o evento fica no log e o consumidor retoma do **offset** do grupo.
+
+### 6.1 O gravador cai (fila)
+
+| # | Faça | Antes de rodar, preveja | O que aparece |
+|---|---|---|---|
+| 1 | `./demo.sh derruba gravador` e `./chamadas.sh emitir 3` | O emissor percebe que o gravador caiu? | Três **202**. O emissor só fala com a fila |
+| 2 | `./demo.sh lideres` e `./chamadas.sh consultar` | Onde estão os 3 comprovantes? | A `gravacao.q` mostra **3** mensagens. A consulta dá **500**: ela lê o gravador por HTTP, e ele está fora |
+| 3 | `./demo.sh levanta gravador`, `./demo.sh lideres` e `./chamadas.sh consultar` | E agora? | A fila volta a **0**, a consulta dá **200** e as 3 notificações aparecem no log |
+
+**Para pensar:**
+
+- **Fila e HTTP se comportam diferente.** O emissor, que usa fila, não sentiu a queda. A consulta, que usa HTTP, devolveu erro. Qual dos dois é *temporal coupling* (acoplamento no tempo)?
+- **Um efeito colateral, de propósito:** o gravador guarda os comprovantes num banco **em memória** (H2). Consulte um id emitido **antes** da queda direto no gravador: `./chamadas.sh interno <id>` dá **404**, porque o banco foi zerado no reinício. A consulta ainda responde 200 para ele porque guardou o comprovante no cache. Num sistema real, onde esse estado precisaria morar?
+
+### 6.2 A notificação cai (tópico e offset)
+
+Antes, emita alguns comprovantes para que as 3 partições já tenham offset registrado no grupo:
+
+```bash
+./chamadas.sh emitir 6
+./demo.sh grupo        # partição, offset do grupo, fim do log, lag e instância que lê
+```
+
+| # | Faça | Antes de rodar, preveja | O que aparece |
+|---|---|---|---|
+| 1 | `./demo.sh derruba notificacao` e `./chamadas.sh emitir 4` | O gravador para de publicar? | Quatro **202**, e a consulta dá **200**: gravar não depende da notificação |
+| 2 | `./demo.sh grupo` | Onde estão os 4 eventos? | `Consumer group 'notificacao' has no active members` e o **lag** distribuído entre as partições (no ensaio: 1, 3 e 0). Os eventos estão no log; o grupo só ainda não leu |
+| 3 | `./demo.sh levanta notificacao` e, depois de uns 10 s, `./demo.sh grupo` | Ela vai reprocessar tudo desde o começo? | Só os **4** eventos novos aparecem no log, e o lag volta a **0**. O consumidor retomou do offset do grupo |
+
+> **Pergunta:** o offset é de quem: da instância, do grupo ou do tópico? (`aula-07-aluno.md`.) E se você quisesse reprocessar tudo desde o início, o que mudaria?
+
+---
+
+## 7. Consumer group: várias instâncias da notificação
+
+O tópico `comprovante-gravado` tem **3 partições**. Instâncias do **mesmo** grupo dividem as partições entre si: cada partição é lida por **uma** instância de cada vez.
+
+```bash
+./demo.sh escala 3      # sobe notificacao-2 (porta 8085) e notificacao-3 (porta 8086) e mostra o grupo
+```
+
+| # | Faça | Antes de rodar, preveja | O que aparece |
+|---|---|---|---|
+| 1 | `./demo.sh escala 3` | Como as 3 partições se dividem entre 3 instâncias? | Uma partição para cada instância (`notificacao`, `notificacao-2` e `notificacao-3`) |
+| 2 | `./chamadas.sh emitir 9` e `grep -c "Enviando notificação" .run/notificacao*.log` | Cada evento é notificado quantas vezes? | Cada evento, **uma vez só**, numa das instâncias. No ensaio: 4, 4 e 1, de acordo com a partição de cada comprovante (a chave é o id) |
+| 3 | `./demo.sh derruba notificacao-2`, espere uns 10 s e `./demo.sh grupo` | O que acontece com a partição dela? | **Rebalanceamento:** a partição passa para outra instância, e os eventos novos continuam sendo notificados |
+| 4 | `./demo.sh escala 1` | — | Volta a uma instância, que fica com as 3 partições |
+
+**Para pensar:**
+
+- **E com 4 instâncias e 3 partições?** Uma fica **parada**. O número de partições é o teto do paralelismo de um grupo.
+- **E um segundo grupo?** Antifraude e BI (`aula-07-aluno.md`) seriam **outros** grupos no mesmo tópico: cada grupo recebe **todos** os eventos, com o seu próprio offset. Dentro de um grupo, divide-se o trabalho; entre grupos, replica-se o fato.
+- **No RabbitMQ, a ideia equivalente** são os consumidores concorrentes numa fila ([complemento da Aula 5](aula-05-complemento-consumidores-concorrentes.md)). Qual é a diferença na ordem das mensagens?
+
+---
+
+## 8. No Postman
 
 Importe os dois arquivos de `demo/` (*Import* → arraste a collection e o environment) e selecione o environment **PIX local (demo)**. As pastas seguem este roteiro:
 
@@ -199,11 +262,11 @@ Importe os dois arquivos de `demo/` (*Import* → arraste a collection e o envir
   - emitir com agência inválida, que dá 400.
 - **2. Resiliência (perfil demo):** ver o estado do gateway, ligar a falha (engolida ou propagada), voltar ao normal, e ver o estado e os eventos do circuito.
 
-Cada requisição tem testes; rode a collection inteira pelo *Runner* com tudo de pé. A collection não derruba nós: para as partes 4 e 5, use o `demo.sh`.
+Cada requisição tem testes; rode a collection inteira pelo *Runner* com tudo de pé. A collection não derruba nós nem serviços: para as partes 4 a 7, use o `demo.sh`.
 
 ---
 
-## 7. Ao terminar
+## 9. Ao terminar
 
 ```bash
 ./demo.sh down          # para os 4 serviços e derruba os clusters, apagando os dados
@@ -212,10 +275,12 @@ docker ps               # não deve sobrar nenhum contêiner cluster-*
 
 ---
 
-## 8. Se algo der errado
+## 10. Se algo der errado
 
 | Sintoma | O que fazer |
 |---|---|
+| `./demo.sh levanta rabbit N` parado em `Waiting` depois de derrubar os três nós | Em outro terminal: `./demo.sh levanta rabbit todos` (o comando parado se destrava sozinho). No Kafka, para religar os três brokers juntos: `./demo.sh levanta kafka todos` |
+| `./demo.sh grupo` não mostra o lag de uma partição | A partição ainda não tem offset registrado no grupo: emita alguns comprovantes com a notificação de pé antes de derrubá-la |
 | `porta 5672/15672/9092 ocupada` no `up` | `docker compose -p gabarito-pix down`; ou `./demo.sh down` e `./demo.sh up` |
 | `o gabarito precisa do JDK 21` no `preparar` | Instale o JDK 21 e rode com `JAVA21_HOME=/caminho/do/jdk-21` |
 | `Unsupported class file major version` ou erro de Byte Buddy no `mvn` | O Maven rodou com outro JDK: `export JAVA_HOME=/caminho/do/jdk-21` antes |
