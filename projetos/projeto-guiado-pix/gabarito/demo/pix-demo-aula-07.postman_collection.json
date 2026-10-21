@@ -1,0 +1,350 @@
+{
+  "info": {
+    "_postman_id": "c72042f0-2050-4939-b9df-e9fb94dc2f80",
+    "name": "Comprovantes PIX — demo Aula 7 (1751)",
+    "description": "Chamadas da demonstração final do projeto guiado PIX (gabarito aula-08) sobre os clusters RabbitMQ e Kafka. Suba tudo antes com `./demo.sh up`. Mesmas chamadas de `chamadas.sh`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Saúde",
+      "item": [
+        {
+          "name": "Health emissor",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{emissor}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health gravador",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gravador}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health consulta",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{consulta}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health notificacao",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{notificacao}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Caminho feliz",
+      "item": [
+        {
+          "name": "Emitir comprovante",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emissor}}/comprovantes",
+            "description": "202 Accepted: o comprovante foi aceito e enfileirado, ainda não gravado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Maria Silva\",\n  \"tipo_documento\": \"CPF\",\n  \"numero_documento\": \"12345678900\",\n  \"numero_agencia\": \"0001\",\n  \"numero_conta\": \"12345\",\n  \"digito_verificador_conta\": \"6\",\n  \"valor_transacao\": 150.75,\n  \"tipo_chave_pix_destino\": \"EMAIL\",\n  \"chave_pix_destino\": \"joao@exemplo.com\",\n  \"nome_cliente_destino\": \"Joao Souza\",\n  \"identificacao_pix\": \"E00000000202610211500\",\n  \"data_hora_transacao\": \"2026-10-21T15:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 202\", () => pm.response.to.have.status(202));",
+                  "const id = pm.response.json().identificador_comprovante;",
+                  "pm.test(\"devolve o id\", () => pm.expect(id).to.be.a(\"string\"));",
+                  "pm.collectionVariables.set(\"id\", id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar (consulta, cache)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{consulta}}/comprovantes/{{id}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A gravação é assíncrona (fila): espera 3 s antes de consultar.",
+                  "setTimeout(() => {}, 3000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"snake_case\", () => pm.expect(pm.response.json()).to.have.property(\"identificador_comprovante\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ler no gravador (contrato do PACT)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gravador}}/interno/comprovantes/{{id}}",
+            "description": "Endpoint interno coberto pelo contract test consulta ↔ gravador."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"camelCase (contrato com a consulta)\", () => pm.expect(pm.response.json()).to.have.property(\"identificadorComprovante\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Emitir inválido (agência com 3 dígitos)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emissor}}/comprovantes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Maria Silva\",\n  \"tipo_documento\": \"CPF\",\n  \"numero_documento\": \"12345678900\",\n  \"numero_agencia\": \"001\",\n  \"numero_conta\": \"12345\",\n  \"digito_verificador_conta\": \"6\",\n  \"valor_transacao\": 150.75,\n  \"tipo_chave_pix_destino\": \"EMAIL\",\n  \"chave_pix_destino\": \"joao@exemplo.com\",\n  \"nome_cliente_destino\": \"Joao Souza\",\n  \"identificacao_pix\": \"E00000000202610211500\",\n  \"data_hora_transacao\": \"2026-10-21T15:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Resiliência (perfil demo)",
+      "item": [
+        {
+          "name": "Gateway: estado",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{notificacao}}/demo/gateway"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gateway: falha engolida (fallback só registra)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{notificacao}}/demo/gateway?falhar=true&propagar=false",
+            "description": "A notificação se perde em silêncio: sem retry, sem DLT."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gateway: falha propagada (retry → DLT)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{notificacao}}/demo/gateway?falhar=true&propagar=true",
+            "description": "O consumo falha: tópicos de retry com espera de 1 s, 2 s e 4 s, depois a DLT."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gateway: normal",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{notificacao}}/demo/gateway?falhar=false&propagar=false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Circuit breaker: estado",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{notificacao}}/actuator/circuitbreakers"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const cb = pm.response.json().circuitBreakers[\"notificacao-gateway\"];",
+                  "console.log(\"estado\", cb.state, \"falhas\", cb.failureRate);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Circuit breaker: eventos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{notificacao}}/actuator/circuitbreakerevents"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "id",
+      "value": ""
+    }
+  ]
+}

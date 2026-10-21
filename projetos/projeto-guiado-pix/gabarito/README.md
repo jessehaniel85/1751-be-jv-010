@@ -19,6 +19,14 @@ antes da aula e para **colar o incremento** se o live coding travar (rede do Tea
 
 Cada pasta tem um **`ESTADO.md`** descrevendo o que funciona naquele ponto e como rodar.
 
+> **Correção de 21/10/2026 (aulas 4 a 8):** o emissor publica o comando na fila em `snake_case` e o gravador
+> lia em `camelCase`; o id chegava nulo e todo comprovante ia para a DLQ (na aula 4, sem DLQ, ficava em laço).
+> O `MessagingConfig` do gravador agora lê a fila em `snake_case`. Detalhes em `aula-08/ESTADO.md`.
+
+> **Demo final em casa (com Docker):** a pasta [`demo/`](demo/) sobe o `aula-08` inteiro sobre os clusters de
+> RabbitMQ e Kafka, com scripts, chamadas curl e collection do Postman. Roteiro:
+> [`aula-07-complemento-demo-final.md`](../../../plano-de-aulas/aula-07-complemento-demo-final.md).
+
 ## Como usar
 ```bash
 cd aula-05

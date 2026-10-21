@@ -1,0 +1,19 @@
+# Perfil "demo" (só para a demonstração em aula): expõe o estado do circuit breaker
+# e habilita POST /demo/gateway para ligar/desligar a falha do gateway.
+resilience4j:
+  circuitbreaker:
+    instances:
+      notificacao-gateway:
+        register-health-indicator: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,circuitbreakers,circuitbreakerevents
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true

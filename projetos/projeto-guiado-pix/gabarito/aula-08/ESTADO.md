@@ -23,3 +23,14 @@ suporta *message pacts* para o fluxo de fila — fica como extensão.)
 
 ## Fim do gabarito
 A Aula 9 é a banca de defesa — sem incremento de código.
+
+## Correções e perfil `demo` (21/10/2026, Aula 7)
+- **Fila emissor → gravador:** o emissor publica o comando em `snake_case`; o gravador lia em
+  `camelCase` e todo comprovante caía na DLQ (id nulo). O conversor da fila do gravador agora lê
+  `snake_case`; o HTTP interno segue em `camelCase` (contrato PACT com a consulta).
+- **Circuit breaker:** faltava `spring-boot-starter-aop` na notificação; sem ele o `@CircuitBreaker` não agia.
+- **PACT consumidor:** `GravadorContractTest` declara `pactVersion = V3` (o Pact 4.6 assume V4 por padrão e o teste falhava).
+- **Perfil `demo`** (só a notificação): `POST /demo/gateway?falhar=&propagar=` liga e desliga a falha do
+  gateway sem editar código; actuator expõe `circuitbreakers` e `circuitbreakerevents`.
+  `propagar=false` mostra o fallback engolindo a falha (sem retry/DLT); `propagar=true` leva à DLT.
+- Demo sobre clusters RabbitMQ e Kafka: ver `../demo/` e o roteiro `plano-de-aulas/aula-07-complemento-demo-final.md` (na raiz do repositório).
