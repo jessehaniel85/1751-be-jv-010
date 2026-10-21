@@ -1,42 +1,38 @@
 package br.com.caixa.pix.emissor;
 
-import br.com.caixa.pix.contracts.ComprovanteAceito;
 import br.com.caixa.pix.contracts.ComprovanteRequest;
-import br.com.caixa.pix.contracts.GravarComprovanteCommand;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * Bounded context EMISSÃO.
- * Aula 2 — SAGA orquestrada (síncrona): valida, aceita, orquestra a gravação remota
- * e, se ela falhar, executa a COMPENSAÇÃO (marca a emissão como FALHOU).
+ * Bounded context EMISSÃO — os passos locais da SAGA (Aula 2):
+ * registrar (ACEITO), confirmar (GRAVADO) e a compensação (INVALIDADO).
  */
 @Service
 public class EmissaoService {
 
-    private final GravadorClient gravador;
     private final EmissaoRegistro registro;
 
-    public EmissaoService(GravadorClient gravador, EmissaoRegistro registro) {
-        this.gravador = gravador;
+    public EmissaoService(EmissaoRegistro registro) {
         this.registro = registro;
     }
 
-    public ComprovanteAceito aceitar(ComprovanteRequest req) {
+    public UUID registrar(ComprovanteRequest req) {
         validar(req);
         UUID id = UUID.randomUUID();
         registro.aceito(id);
-        try {
-            gravador.gravar(new GravarComprovanteCommand(id, req));
-            registro.gravado(id);
-        } catch (Exception falha) {
-            registro.falhou(id);            // ação compensatória
-            throw new GravacaoFalhouException(id);
-        }
-        return new ComprovanteAceito(id, LocalDateTime.now());
+        return id;
+    }
+
+    public void gravado(UUID id) {
+        registro.gravado(id);
+    }
+
+    /** Compensação: marca INVALIDADO com o motivo, deixando rastro. Repetir não muda nada. */
+    public void invalidar(UUID id, String motivo) {
+        registro.invalidado(id, motivo);
     }
 
     private void validar(ComprovanteRequest r) {
@@ -55,6 +51,7 @@ public class EmissaoService {
     private void exigir(String v, String c) {
         if (v == null || v.isBlank()) throw new ComprovanteInvalidoException(c + " é obrigatório");
     }
+
     private void tamanho(String v, int n, String c) {
         if (v == null || v.length() != n) throw new ComprovanteInvalidoException(c + " deve ter " + n + " caractere(s)");
     }

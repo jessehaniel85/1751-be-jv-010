@@ -18,16 +18,6 @@ spring:
     port: ${RABBIT_PORT:5672}
     username: ${RABBIT_USER:guest}
     password: ${RABBIT_PASS:guest}
-    listener:
-      simple:
-        acknowledge-mode: auto
-        default-requeue-rejected: false
-        retry:
-          enabled: true
-          max-attempts: 3
-          initial-interval: 1000ms
-          multiplier: 2.0
-          max-interval: 10000ms
   kafka:
     bootstrap-servers: ${KAFKA:localhost:9092}
     producer:

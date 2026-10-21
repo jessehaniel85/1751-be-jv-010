@@ -7,9 +7,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
-/** Endpoints internos do GRAVADOR: gravação (Aula 2) e leitura por id (Aula 3). */
+/** Endpoints do GRAVADOR (uso interno dos outros serviços): gravação (Aula 2) e leitura por id (Aula 3). */
 @RestController
-@RequestMapping("/interno/comprovantes")
+@RequestMapping("/comprovantes")
 public class GravadorController {
 
     private final GravadorService gravador;

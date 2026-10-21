@@ -1,57 +1,25 @@
 package br.com.caixa.pix.emissor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.amqp.core.*;
+import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Aula 5 — topologia formal: exchange direct -> fila de gravacao, com DEAD LETTER.
- * Falha transitoria: retry (config no application.yml). Falha permanente: vai para a DLQ.
- */
+/** Aula 5 — o emissor publica na exchange; fila, DLX e DLQ são declaradas pelo gravador. */
 @Configuration
 public class MessagingConfig {
 
-    public static final String EXCHANGE   = "gravacao.ex";
-    public static final String ROUTING    = "gravacao";
-    public static final String FILA        = "gravacao.q";
-    public static final String DLX        = "gravacao.dlx";
-    public static final String DLQ        = "gravacao.dlq";
+    public static final String EXCHANGE = "comprovantes.exchange";
+    public static final String ROUTING = "comprovante.gravar";
 
     @Bean
-    public DirectExchange gravacaoExchange() {
+    public DirectExchange comprovantesExchange() {
         return new DirectExchange(EXCHANGE);
     }
 
-    @Bean
-    public Queue gravacaoQueue() {
-        return QueueBuilder.durable(FILA)
-                .withArgument("x-dead-letter-exchange", DLX)
-                .build();
-    }
-
-    @Bean
-    public Binding gravacaoBinding() {
-        return BindingBuilder.bind(gravacaoQueue()).to(gravacaoExchange()).with(ROUTING);
-    }
-
-    @Bean
-    public FanoutExchange deadLetterExchange() {
-        return new FanoutExchange(DLX);
-    }
-
-    @Bean
-    public Queue deadLetterQueue() {
-        return QueueBuilder.durable(DLQ).build();
-    }
-
-    @Bean
-    public Binding deadLetterBinding() {
-        return BindingBuilder.bind(deadLetterQueue()).to(deadLetterExchange());
-    }
-
+    /** Mensagens em JSON (usa o ObjectMapper do Boot, com suporte a LocalDateTime). */
     @Bean
     public MessageConverter jsonMessageConverter(ObjectMapper mapper) {
         return new Jackson2JsonMessageConverter(mapper);

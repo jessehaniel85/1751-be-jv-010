@@ -6,12 +6,13 @@ import java.util.UUID;
 
 /** Projeção de leitura de um comprovante já gravado (GET). */
 public record ComprovanteView(
-        UUID identificadorComprovante,
+        UUID id,
+        BigDecimal valor,
+        String chavePix,
+        LocalDateTime dataHora,
+        String status,
         String nome,
         String numeroDocumento,
-        BigDecimal valorTransacao,
-        String chavePixDestino,
-        LocalDateTime dataHoraTransacao,
         LocalDateTime dataHoraGravacao
 ) {
 }

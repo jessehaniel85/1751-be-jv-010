@@ -1,21 +1,22 @@
 package br.com.caixa.pix.emissor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** Aula 4 — topologia mínima de fila (a DLQ entra na Aula 5). */
+/** Aula 4 — o emissor publica na exchange; a fila e o binding são do gravador. */
 @Configuration
 public class MessagingConfig {
 
-    public static final String FILA_GRAVACAO = "gravacao.q";
+    public static final String EXCHANGE = "comprovantes.exchange";
+    public static final String ROUTING = "comprovante.gravar";
 
     @Bean
-    public Queue gravacaoQueue() {
-        return new Queue(FILA_GRAVACAO, true);
+    public DirectExchange comprovantesExchange() {
+        return new DirectExchange(EXCHANGE);
     }
 
     /** Mensagens em JSON (usa o ObjectMapper do Boot, com suporte a LocalDateTime). */

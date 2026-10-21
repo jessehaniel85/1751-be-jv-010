@@ -4,6 +4,7 @@ import br.com.caixa.pix.contracts.ComprovanteGravadoEvent;
 import br.com.caixa.pix.contracts.ComprovanteView;
 import br.com.caixa.pix.contracts.GravarComprovanteCommand;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -21,6 +22,7 @@ public class GravadorService {
         this.eventos = eventos;
     }
 
+    @Transactional
     public boolean gravar(GravarComprovanteCommand command) {
         if (repository.existsById(command.identificadorComprovante())) {
             return false;
@@ -37,8 +39,8 @@ public class GravadorService {
     }
 
     private ComprovanteView toView(Comprovante c) {
-        return new ComprovanteView(c.getId(), c.getNome(), c.getNumeroDocumento(),
-                c.getValor().valor(), c.getDestino().valor(),
-                c.getDataHoraTransacao(), c.getDataHoraGravacao());
+        return new ComprovanteView(c.getId(), c.getValor().valor(), c.getDestino().valor(),
+                c.getDataHoraTransacao(), c.getStatus().name(), c.getNome(),
+                c.getNumeroDocumento(), c.getDataHoraGravacao());
     }
 }

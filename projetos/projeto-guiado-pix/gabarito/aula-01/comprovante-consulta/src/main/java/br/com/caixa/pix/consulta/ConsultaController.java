@@ -20,9 +20,9 @@ import java.util.UUID;
 @RequestMapping("/comprovantes")
 public class ConsultaController {
 
-    private final ConsultaService service;
+    private final ConsultaComprovante service;
 
-    public ConsultaController(ConsultaService service) {
+    public ConsultaController(ConsultaComprovante service) {
         this.service = service;
     }
 
