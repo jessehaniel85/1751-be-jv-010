@@ -5,6 +5,7 @@ import au.com.dius.pact.consumer.dsl.PactDslJsonBody;
 import au.com.dius.pact.consumer.dsl.PactDslWithProvider;
 import au.com.dius.pact.consumer.junit5.PactConsumerTestExt;
 import au.com.dius.pact.consumer.junit5.PactTestFor;
+import au.com.dius.pact.core.model.PactSpecVersion;
 import au.com.dius.pact.core.model.RequestResponsePact;
 import au.com.dius.pact.core.model.annotations.Pact;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Gera o pact file que o provedor (gravador) verifica.
  */
 @ExtendWith(PactConsumerTestExt.class)
-@PactTestFor(providerName = "comprovante-gravador")
+@PactTestFor(providerName = "comprovante-gravador", pactVersion = PactSpecVersion.V3)
 class GravadorContractTest {
 
     private static final String ID = "11111111-1111-1111-1111-111111111111";

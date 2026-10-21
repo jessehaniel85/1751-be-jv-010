@@ -29,6 +29,11 @@
             <artifactId>resilience4j-spring-boot3</artifactId>
             <version>${resilience4j.version}</version>
         </dependency>
+        <!-- Aula 7: sem AOP a anotação @CircuitBreaker não tem efeito -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
         <!-- Aula 7: backoff do @RetryableTopic -->
         <dependency>
             <groupId>org.springframework.retry</groupId>
