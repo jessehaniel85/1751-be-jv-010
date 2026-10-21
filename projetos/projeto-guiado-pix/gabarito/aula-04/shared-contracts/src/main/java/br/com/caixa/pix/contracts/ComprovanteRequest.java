@@ -21,7 +21,7 @@ public record ComprovanteRequest(
         String numeroConta,          // 5 caracteres
         String digitoVerificadorConta, // 1 caractere
         BigDecimal valorTransacao,
-        TipoChavePix tipoChavePixDestino,
+        TipoChave tipoChavePixDestino,
         String chavePixDestino,
         String nomeClienteDestino,
         String identificacaoPix,

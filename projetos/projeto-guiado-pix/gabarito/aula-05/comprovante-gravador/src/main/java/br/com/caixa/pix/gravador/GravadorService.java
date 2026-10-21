@@ -21,7 +21,9 @@ public class GravadorService {
         if (repository.existsById(command.identificadorComprovante())) {
             return false;
         }
-        repository.save(ComprovanteEntity.de(command.identificadorComprovante(), command.dados()));
+        Comprovante comprovante = Comprovante.aPartirDe(command);
+        comprovante.marcarGravado();
+        repository.save(comprovante);
         return true;
     }
 
@@ -29,9 +31,9 @@ public class GravadorService {
         return repository.findById(id).map(this::toView);
     }
 
-    private ComprovanteView toView(ComprovanteEntity e) {
-        return new ComprovanteView(e.getId(), e.getNome(), e.getNumeroDocumento(),
-                e.getValorTransacao(), e.getChavePixDestino(),
-                e.getDataHoraTransacao(), e.getDataHoraGravacao());
+    private ComprovanteView toView(Comprovante c) {
+        return new ComprovanteView(c.getId(), c.getNome(), c.getNumeroDocumento(),
+                c.getValor().valor(), c.getDestino().valor(),
+                c.getDataHoraTransacao(), c.getDataHoraGravacao());
     }
 }

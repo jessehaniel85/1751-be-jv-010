@@ -23,7 +23,7 @@ public class GravadorService {
 
     public void gravar(GravarComprovanteCommand command) {
         // TODO (Aula 5): idempotência — if (repository.existsById(command.identificadorComprovante())) return;
-        // TODO (Aula 4): mapear command.dados() -> ComprovanteEntity e persistir.
+        // TODO (Aula 4): Comprovante.aPartirDe(command), marcarGravado() e persistir.
         // TODO (Aula 6): publicar ComprovanteGravadoEvent no tópico.
         throw new UnsupportedOperationException("Construído na Aula 4/5");
     }

@@ -18,7 +18,9 @@ public class GravadorService {
         if (repository.existsById(command.identificadorComprovante())) {
             return false;
         }
-        repository.save(ComprovanteEntity.de(command.identificadorComprovante(), command.dados()));
+        Comprovante comprovante = Comprovante.aPartirDe(command);
+        comprovante.marcarGravado();
+        repository.save(comprovante);
         return true;
     }
 }

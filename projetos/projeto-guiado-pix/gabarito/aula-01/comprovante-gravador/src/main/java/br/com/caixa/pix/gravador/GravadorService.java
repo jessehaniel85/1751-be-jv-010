@@ -17,8 +17,8 @@ public class GravadorService {
     }
 
     public void gravar(GravarComprovanteCommand command) {
-        ComprovanteEntity entidade = ComprovanteEntity.de(
-                command.identificadorComprovante(), command.dados());
-        repository.save(entidade);
+        Comprovante comprovante = Comprovante.aPartirDe(command);
+        comprovante.marcarGravado();
+        repository.save(comprovante);
     }
 }

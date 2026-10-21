@@ -7,7 +7,8 @@ import au.com.dius.pact.provider.junitsupport.Provider;
 import au.com.dius.pact.provider.junitsupport.State;
 import au.com.dius.pact.provider.junitsupport.loader.PactFolder;
 import br.com.caixa.pix.contracts.ComprovanteRequest;
-import br.com.caixa.pix.contracts.TipoChavePix;
+import br.com.caixa.pix.contracts.GravarComprovanteCommand;
+import br.com.caixa.pix.contracts.TipoChave;
 import br.com.caixa.pix.contracts.TipoDocumento;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestTemplate;
@@ -52,10 +53,12 @@ class GravadorProviderTest {
     void comprovanteExiste() {
         UUID id = UUID.fromString("11111111-1111-1111-1111-111111111111");
         if (!repository.existsById(id)) {
-            repository.save(ComprovanteEntity.de(id, new ComprovanteRequest(
+            Comprovante comprovante = Comprovante.aPartirDe(new GravarComprovanteCommand(id, new ComprovanteRequest(
                     "Giovanni", TipoDocumento.CPF, "50329291076", "2022", "00276", "0",
-                    new BigDecimal("23.99"), TipoChavePix.CELULAR, "11948755536",
+                    new BigDecimal("23.99"), TipoChave.CELULAR, "11948755536",
                     "Fernando", "churrasco", LocalDateTime.now())));
+            comprovante.marcarGravado();
+            repository.save(comprovante);
         }
     }
 }

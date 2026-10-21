@@ -1,7 +1,7 @@
 package br.com.caixa.pix.contracts;
 
 /** Tipos de chave PIX de destino suportados. */
-public enum TipoChavePix {
+public enum TipoChave {
     CELULAR,
     EMAIL,
     CPF,
