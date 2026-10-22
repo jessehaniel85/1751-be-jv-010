@@ -18,21 +18,11 @@ spring:
     port: ${RABBIT_PORT:5672}
     username: ${RABBIT_USER:guest}
     password: ${RABBIT_PASS:guest}
-    listener:
-      simple:
-        acknowledge-mode: auto
-        default-requeue-rejected: false
-        retry:
-          enabled: true
-          max-attempts: 3
-          initial-interval: 1000ms
-          multiplier: 2.0
-          max-interval: 10000ms
   kafka:
     bootstrap-servers: ${KAFKA:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer   # instanciado pelo KafkaConfig com o ObjectMapper do Boot
 
 management:
   endpoints:

@@ -137,7 +137,7 @@ public class RabbitConfig {
     // 1) Fila DURÁVEL — o "true" é a durabilidade. Sobrevive ao restart do broker.
     @Bean
     Queue comprovanteQueue() {
-        return new Queue("comprovante.gravar.q", /* durable */ true);
+        return new Queue("gravacao.q", /* durable */ true);
     }
 }
 ```
@@ -145,7 +145,7 @@ public class RabbitConfig {
 ```java
 // 2) Mensagem PERSISTENTE — deliveryMode = PERSISTENT (grava em disco).
 //    Com RabbitTemplate, este é o DEFAULT do Spring. Para deixar EXPLÍCITO:
-rabbitTemplate.convertAndSend("comprovante.gravar.q", payload, message -> {
+rabbitTemplate.convertAndSend("gravacao.q", payload, message -> {
     message.getMessageProperties()
            .setDeliveryMode(MessageDeliveryMode.PERSISTENT); // deliveryMode = 2
     return message;
@@ -184,12 +184,12 @@ Para consolidar, o mapa dos termos que se cruzaram na discussão — separados p
 | Termo | O que é (nível) | Exemplo |
 |---|---|---|
 | **Broker** | O produto que roteia e guarda mensagens | RabbitMQ, Kafka, IBM MQ |
-| **Fila (queue)** | Estrutura ponto-a-ponto: um trabalho, um consumidor pega | `comprovante.gravar.q` |
+| **Fila (queue)** | Estrutura ponto-a-ponto: um trabalho, um consumidor pega | `gravacao.q` |
 | **Tópico (topic)** | Log de fatos: muitos consumidores independentes leem | `comprovante-gravado` |
 | **AMQP** | Protocolo de fio | Falado pelo RabbitMQ |
 | **MQI** | Protocolo de fio nativo | Falado pelo IBM MQ |
 | **JMS** | API/spec Java para falar com brokers | Acessa IBM MQ, RabbitMQ, ActiveMQ |
-| **DLQ** | Fila lateral para mensagens que falharam | `comprovante.gravar.dlq` (Aula 6) |
+| **DLQ** | Fila lateral para mensagens que falharam | `gravacao.dlq` (Aula 6) |
 | **Request-Reply** | Padrão de resposta correlacionada sobre fila | "fila de sucesso" que alguém aguarda |
 | **Evento de domínio** | Fato publicado, muitos observam | `ComprovanteGravadoEvent` (Aula 7) |
 | **at-least-once** | Garantia: nunca perde, pode duplicar | Padrão prático (Aula 5, §4) |

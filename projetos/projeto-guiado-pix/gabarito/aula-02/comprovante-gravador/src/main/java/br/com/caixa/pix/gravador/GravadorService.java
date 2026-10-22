@@ -2,6 +2,7 @@ package br.com.caixa.pix.gravador;
 
 import br.com.caixa.pix.contracts.GravarComprovanteCommand;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /** Aula 2: IDEMPOTÊNCIA — reprocessar o mesmo id não grava duas vezes. */
 @Service
@@ -14,11 +15,14 @@ public class GravadorService {
     }
 
     /** @return true se gravou agora; false se já existia (idempotência). */
+    @Transactional
     public boolean gravar(GravarComprovanteCommand command) {
         if (repository.existsById(command.identificadorComprovante())) {
             return false;
         }
-        repository.save(ComprovanteEntity.de(command.identificadorComprovante(), command.dados()));
+        Comprovante comprovante = Comprovante.aPartirDe(command);
+        comprovante.marcarGravado();
+        repository.save(comprovante);
         return true;
     }
 }

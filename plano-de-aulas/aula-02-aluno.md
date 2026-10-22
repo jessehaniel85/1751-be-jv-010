@@ -103,20 +103,21 @@ A compensação é onde a maioria erra. Três princípios que você precisa inte
 public class EmissaoSagaOrchestrator {
 
     private final EmissaoService emissao;
-    private final GravacaoService gravacao;
+    private final GravadorClient gravador;
 
-    public EmissaoSagaOrchestrator(EmissaoService emissao, GravacaoService gravacao) {
+    public EmissaoSagaOrchestrator(EmissaoService emissao, GravadorClient gravador) {
         this.emissao = emissao;
-        this.gravacao = gravacao;
+        this.gravador = gravador;
     }
 
-    public ComprovanteId emitir(ComprovanteRequest req) {
+    public ComprovanteAceito emitir(ComprovanteRequest req) {
         // Passo 1: transação local na base de Emissão
-        ComprovanteId id = emissao.registrar(req);
+        UUID id = emissao.registrar(req);
         try {
             // Passo 2: transação local na base de Gravação (idempotente, ver §5)
-            gravacao.gravar(new GravarComprovanteCommand(id, req));
-            return id;
+            gravador.gravar(new GravarComprovanteCommand(id, req));
+            emissao.gravado(id);
+            return new ComprovanteAceito(id, LocalDateTime.now());
         } catch (GravacaoException falha) {
             // Compensação do passo 1 — operação de negócio idempotente, não um DELETE
             emissao.invalidar(id, "gravacao falhou: " + falha.getMessage());
@@ -138,11 +139,11 @@ Como implementar no consumidor da fila de gravação:
 
 ```java
 @Service
-public class GravacaoService {
+public class GravadorService {
 
     private final ComprovanteRepository repo;
 
-    public GravacaoService(ComprovanteRepository repo) {
+    public GravadorService(ComprovanteRepository repo) {
         this.repo = repo;
     }
 
@@ -150,15 +151,17 @@ public class GravacaoService {
     public void gravar(GravarComprovanteCommand cmd) {
         // A chave de idempotência é o próprio identificador de negócio do comprovante.
         // Se já existe, a operação é um no-op silencioso — reprocessar é seguro.
-        if (repo.existsByIdempotencyKey(cmd.idempotencyKey())) {
+        if (repo.existsById(cmd.identificadorComprovante())) {
             return; // já gravado numa entrega anterior; nada a fazer
         }
-        repo.save(Comprovante.aPartirDe(cmd));
+        Comprovante comprovante = Comprovante.aPartirDe(cmd);
+        comprovante.marcarGravado();
+        repo.save(comprovante);
     }
 }
 ```
 
-Detalhe sênior: a verificação `existsBy...` + `save` precisa ser **atômica** contra concorrência (duas entregas simultâneas da mesma mensagem). Na prática, apoie a idempotência numa **restrição de unicidade no banco** (`UNIQUE(idempotency_key)`) e trate a violação como sucesso — o banco vira o árbitro, não o seu `if`.
+Detalhe sênior: a verificação `existsBy...` + `save` precisa ser **atômica** contra concorrência (duas entregas simultâneas da mesma mensagem). Na prática, apoie a idempotência numa **restrição de unicidade no banco** (no gabarito, a chave primária `id` do comprovante, que é o próprio `identificadorComprovante`) e trate a violação como sucesso — o banco vira o árbitro, não o seu `if`.
 
 ---
 

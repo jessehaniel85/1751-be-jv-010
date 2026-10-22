@@ -155,7 +155,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"snake_case\", () => pm.expect(pm.response.json()).to.have.property(\"identificador_comprovante\"));"
+                  "pm.test(\"snake_case\", () => pm.expect(pm.response.json()).to.have.property(\"chave_pix\"));"
                 ]
               }
             }
@@ -166,7 +166,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{gravador}}/interno/comprovantes/{{id}}",
+            "url": "{{gravador}}/comprovantes/{{id}}",
             "description": "Endpoint interno coberto pelo contract test consulta ↔ gravador."
           },
           "event": [
@@ -176,7 +176,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"camelCase (contrato com a consulta)\", () => pm.expect(pm.response.json()).to.have.property(\"identificadorComprovante\"));"
+                  "pm.test(\"camelCase (contrato com a consulta)\", () => pm.expect(pm.response.json()).to.have.property(\"chavePix\"));"
                 ]
               }
             }
@@ -240,11 +240,11 @@
           ]
         },
         {
-          "name": "Gateway: falha engolida (fallback só registra)",
+          "name": "Gateway: falha (reenvio agendado + retry → DLT)",
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{notificacao}}/demo/gateway?falhar=true&propagar=false",
+            "url": "{{notificacao}}/demo/gateway?falhar=true",
             "description": "A notificação se perde em silêncio: sem retry, sem DLT."
           },
           "event": [
@@ -260,12 +260,11 @@
           ]
         },
         {
-          "name": "Gateway: falha propagada (retry → DLT)",
+          "name": "Gateway: lento (2 s por chamada)",
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{notificacao}}/demo/gateway?falhar=true&propagar=true",
-            "description": "O consumo falha: tópicos de retry com espera de 1 s, 2 s e 4 s, depois a DLT."
+            "url": "{{notificacao}}/demo/gateway?lentidao=2000"
           },
           "event": [
             {
@@ -273,7 +272,28 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"lento\", () => pm.expect(pm.response.text()).to.include(\"lentidao_ms=2000\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bulkhead: rajada de 10 chamadas",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{notificacao}}/demo/gateway/rajada?n=10"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"recusa o que não cabe\", () => pm.expect(pm.response.text()).to.match(/enviadas_para_reenvio=[1-9]/));"
                 ]
               }
             }
@@ -284,7 +304,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{notificacao}}/demo/gateway?falhar=false&propagar=false"
+            "url": "{{notificacao}}/demo/gateway?falhar=false&lentidao=0"
           },
           "event": [
             {
@@ -312,7 +332,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "const cb = pm.response.json().circuitBreakers[\"notificacao-gateway\"];",
+                  "const cb = pm.response.json().circuitBreakers[\"gatewayNotificacao\"];",
                   "console.log(\"estado\", cb.state, \"falhas\", cb.failureRate);"
                 ]
               }
@@ -333,6 +353,26 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reatores: BI, compliance, reenvios e DLT",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{notificacao}}/demo/reatores"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"BI contou\", () => pm.expect(pm.response.text()).to.match(/bi_quantidade=[1-9]/));"
                 ]
               }
             }

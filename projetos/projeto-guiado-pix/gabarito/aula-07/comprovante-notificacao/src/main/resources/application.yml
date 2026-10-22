@@ -21,11 +21,22 @@ spring:
 resilience4j:
   circuitbreaker:
     instances:
-      notificacao-gateway:
+      gatewayNotificacao:
+        sliding-window-type: COUNT_BASED
         sliding-window-size: 10
-        failure-rate-threshold: 50
-        wait-duration-in-open-state: 10s
+        failure-rate-threshold: 50          # 50% de falhas → abre
+        wait-duration-in-open-state: 30s     # 30s aberto, depois half-open
         permitted-number-of-calls-in-half-open-state: 3
+  ratelimiter:
+    instances:
+      gatewayNotificacao:
+        limit-for-period: 100                # cota do gateway: 100 chamadas...
+        limit-refresh-period: 1s             # ...por segundo
+
+# Aula 6 — o grupo compliance nasce desligado; ligado, lê o tópico desde o início (earliest).
+pix:
+  compliance:
+    ativo: false
 
 management:
   endpoints:

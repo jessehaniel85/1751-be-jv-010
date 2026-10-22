@@ -3,8 +3,9 @@
 **Foco:** desacoplar a emissão da gravação.
 
 ## O que funciona / o que mudou
-- **emissor**: valida, responde **202** e **publica** `GravarComprovanteCommand` na fila
-  `gravacao.q` (não espera mais a gravação). Saiu o cliente REST síncrono da Aula 2.
+- **emissor**: `EmissaoController` + `EmissorDeComprovante.aceitarEPublicar`: valida, responde **202** e
+  **publica** `GravarComprovanteCommand` na exchange `comprovantes.exchange` (routing key
+  `comprovante.gravar`), ligada à fila `gravacao.q` (não espera mais a gravação). Saiu o cliente REST síncrono da Aula 2.
 - **gravador**: **@RabbitListener** consome a fila e grava (idempotente sob redelivery).
 - Mensagens em **JSON** (Jackson + suporte a LocalDateTime).
 - A consulta (Aula 3) continua igual.

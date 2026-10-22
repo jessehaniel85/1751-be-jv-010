@@ -95,7 +95,7 @@ public class GravadorDeComprovante {
 
     // Idempotente: reprocessar a MESMA mensagem não cria um segundo comprovante.
     public void gravar(GravarComprovanteCommand cmd) {
-        if (repositorio.existsById(cmd.idComprovante())) {
+        if (repositorio.existsById(cmd.identificadorComprovante())) {
             return; // já gravado numa entrega anterior — nada a fazer
         }
         repositorio.save(mapear(cmd));
@@ -137,10 +137,8 @@ O comando que trafega pela fila — um `record` imutável, com a chave de idempo
 
 ```java
 public record GravarComprovanteCommand(
-        UUID idComprovante,   // chave de negócio = chave de idempotência
-        String chavePixDestino,
-        BigDecimal valor,
-        Instant emitidoEm
+        UUID identificadorComprovante,   // chave de negócio = chave de idempotência
+        ComprovanteRequest dados
 ) {}
 ```
 
@@ -158,11 +156,11 @@ public class EmissaoController {
     }
 
     @PostMapping
-    public ResponseEntity<EmissaoResponse> emitir(@RequestBody @Valid EmissaoRequest req) {
+    public ResponseEntity<ComprovanteAceito> emitir(@RequestBody ComprovanteRequest req) {
         UUID id = emissor.aceitarEPublicar(req); // valida + publica o comando
         return ResponseEntity
                 .accepted() // 202: "recebi, vou processar"
-                .body(new EmissaoResponse(id, "PROCESSANDO"));
+                .body(new ComprovanteAceito(id, LocalDateTime.now()));
     }
 }
 ```
@@ -179,14 +177,14 @@ public class EmissorDeComprovante {
         this.rabbit = rabbit;
     }
 
-    public UUID aceitarEPublicar(EmissaoRequest req) {
+    public UUID aceitarEPublicar(ComprovanteRequest req) {
         validarRegrasDeNegocio(req);  // síncrono e rápido: VOs, formato, limites
         UUID id = UUID.randomUUID();   // identidade gerada AQUI, na aceitação
 
         rabbit.convertAndSend(
                 "comprovantes.exchange",  // exchange (não a fila diretamente)
                 "comprovante.gravar",     // routing key = a intenção
-                new GravarComprovanteCommand(id, req.chavePixDestino(), req.valor(), Instant.now()));
+                new GravarComprovanteCommand(id, req));
 
         return id; // devolvido no 202, para o cliente consultar depois
     }
@@ -205,17 +203,16 @@ public class GravacaoListener {
         this.repositorio = repositorio;
     }
 
-    @RabbitListener(queues = "comprovante.gravar.q")
+    @RabbitListener(queues = "gravacao.q")
     public void aoReceber(GravarComprovanteCommand cmd) {
-        if (repositorio.existsById(cmd.idComprovante())) {
+        if (repositorio.existsById(cmd.identificadorComprovante())) {
             return; // mensagem reentregue (at-least-once): ignora com segurança
         }
         repositorio.save(mapear(cmd));
     }
 
     private Comprovante mapear(GravarComprovanteCommand cmd) {
-        return new Comprovante(cmd.idComprovante(), cmd.chavePixDestino(),
-                               cmd.valor(), cmd.emitidoEm());
+        return Comprovante.aPartirDe(cmd);
     }
 }
 ```

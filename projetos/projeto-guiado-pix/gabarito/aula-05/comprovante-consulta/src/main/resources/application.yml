@@ -24,4 +24,8 @@ management:
 
 # Aula 3 — fonte de dados da consulta (o gravador) para o fallback de cache
 gravador:
-  base-url: http://localhost:8082
+  url: http://localhost:8082
+  timeout: 2s   # toda chamada remota tem teto de tempo (decisão de 21/10/2026)
+# Espera entre as 3 retentativas (dobra a cada uma: 100, 200 e 400 ms). Decisão de 21/10/2026.
+consulta:
+  backoff-inicial: 100ms

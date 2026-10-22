@@ -1,10 +1,11 @@
 package br.com.caixa.pix.consulta;
 
-import br.com.caixa.pix.contracts.ComprovanteView;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Optional;
 import java.util.UUID;
 
 /** CONSULTA: GET por id com cache + fallback no gravador (Aula 3). */
@@ -12,16 +13,14 @@ import java.util.UUID;
 @RequestMapping("/comprovantes")
 public class ConsultaController {
 
-    private final ConsultaService service;
+    private final ConsultaComprovante consulta;
 
-    public ConsultaController(ConsultaService service) {
-        this.service = service;
+    public ConsultaController(ConsultaComprovante consulta) {
+        this.consulta = consulta;
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ComprovanteView> consultar(@PathVariable UUID id) {
-        return Optional.ofNullable(service.buscar(id))
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public ResponseEntity<ComprovanteDTO> consultar(@PathVariable UUID id) {
+        return ResponseEntity.ok(consulta.consultar(id));
     }
 }

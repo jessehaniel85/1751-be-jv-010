@@ -15,6 +15,11 @@ spring:
         spring.json.trusted.packages: br.com.caixa.pix.contracts
         spring.json.value.default.type: br.com.caixa.pix.contracts.ComprovanteGravadoEvent
 
+# Aula 6 — o grupo compliance nasce desligado; ligado, lê o tópico desde o início (earliest).
+pix:
+  compliance:
+    ativo: false
+
 management:
   endpoints:
     web:

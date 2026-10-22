@@ -78,8 +78,8 @@ VOs são onde mora boa parte da regra de negócio e onde você elimina a "obsess
 // Value Object: imutável, igualdade por valor, validação no construtor.
 public record ChavePix(TipoChave tipo, String valor) {
     public ChavePix {
-        if (tipo == TipoChave.CPF && !valido(valor))
-            throw new IllegalArgumentException("CPF inválido para chave PIX");
+        if (valor == null || valor.isBlank())
+            throw new IllegalArgumentException("chave PIX vazia");
         // a regra do que é uma chave válida vive AQUI, não espalhada
     }
 }

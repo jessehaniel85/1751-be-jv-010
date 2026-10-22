@@ -1,0 +1,126 @@
+{
+  "consumer": {
+    "name": "comprovante-gravador"
+  },
+  "messages": [
+    {
+      "contents": {
+        "dados": {
+          "chave_pix_destino": "string",
+          "data_hora_transacao": "2000-01-31T11:00:00",
+          "nome": "string",
+          "numero_documento": "string",
+          "tipo_chave_pix_destino": "EMAIL",
+          "valor_transacao": 100
+        },
+        "identificador_comprovante": "e2490de5-5bd3-43d5-b7c4-526e33f71304"
+      },
+      "description": "comando de grava\u00E7\u00E3o de comprovante",
+      "generators": {
+        "body": {
+          "$.dados.chave_pix_destino": {
+            "size": 20,
+            "type": "RandomString"
+          },
+          "$.dados.data_hora_transacao": {
+            "format": "yyyy-MM-dd'T'HH:mm:ss",
+            "type": "DateTime"
+          },
+          "$.dados.nome": {
+            "size": 20,
+            "type": "RandomString"
+          },
+          "$.dados.numero_documento": {
+            "size": 20,
+            "type": "RandomString"
+          },
+          "$.dados.valor_transacao": {
+            "max": 2147483647,
+            "min": 0,
+            "type": "RandomInt"
+          },
+          "$.identificador_comprovante": {
+            "type": "Uuid"
+          }
+        }
+      },
+      "matchingRules": {
+        "body": {
+          "$.dados.chave_pix_destino": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.dados.data_hora_transacao": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "format": "yyyy-MM-dd'T'HH:mm:ss",
+                "match": "timestamp"
+              }
+            ]
+          },
+          "$.dados.nome": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.dados.numero_documento": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.dados.tipo_chave_pix_destino": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "CELULAR|EMAIL|CPF|CNPJ|ALEATORIA"
+              }
+            ]
+          },
+          "$.dados.valor_transacao": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "number"
+              }
+            ]
+          },
+          "$.identificador_comprovante": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+              }
+            ]
+          }
+        }
+      },
+      "metaData": {
+        "contentType": "application/json"
+      }
+    }
+  ],
+  "metadata": {
+    "pact-jvm": {
+      "version": "4.6.14"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "comprovante-emissor"
+  }
+}

@@ -104,7 +104,7 @@ O teste do consulta declara a interação que ele precisa e roda o `GravadorClie
 ```java
 // comprovante-consulta/src/test/java — gera o pact file.
 @ExtendWith(PactConsumerTestExt.class)
-@PactTestFor(providerName = "comprovante-gravador", pactVersion = PactSpecVersion.V4)
+@PactTestFor(providerName = "comprovante-gravador", pactVersion = PactSpecVersion.V3)
 class GravadorContractTest {
 
     @Pact(consumer = "comprovante-consulta")
@@ -128,14 +128,20 @@ class GravadorContractTest {
 
     @Test
     @PactTestFor(pactMethod = "comprovanteExiste")
-    void leResposataDoGravador(MockServer mock) {
-        var client = new GravadorClient(RestClient.builder(), mock.getUrl());
+    void leRespostaDoGravador(MockServer mock) {
+        // o builder de produção (GravadorClientConfig: timeout e camelCase do gravador),
+        // com o ObjectMapper snake_case desta API — assim o teste pega a divergência de nomes
+        var client = new GravadorClient(new GravadorClientConfig()
+                .restClientBuilder(Duration.ofSeconds(2), Jackson2ObjectMapperBuilder.json()
+                        .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE).build()),
+                mock.getUrl());
 
         var dto = client.buscarPorId(
             UUID.fromString("7f3a0e4c-1d2b-4c8a-9f01-2a3b4c5d6e7f"));
 
         assertThat(dto).isPresent();
         assertThat(dto.get().valor()).isEqualByComparingTo("150.00");  // valida o que importa
+        assertThat(dto.get().chavePix()).isEqualTo("joao@pix.com");    // nome composto: pega snake × camel
     }
 }
 ```
@@ -149,9 +155,12 @@ No `comprovante-gravador`, a verificação sobe o serviço real e faz o replay d
 ```java
 // comprovante-gravador/src/test/java — verifica o pact contra o serviço real.
 @Provider("comprovante-gravador")
+@Consumer("comprovante-consulta")
 @PactFolder("pacts")                       // lê os pact files gerados pelo consumer
 @SpringBootTest(webEnvironment = RANDOM_PORT)
 class GravadorVerificacaoTest {
+
+    private static final UUID EXISTENTE = UUID.fromString("7f3a0e4c-1d2b-4c8a-9f01-2a3b4c5d6e7f");
 
     @LocalServerPort int porta;
     @Autowired ComprovanteRepository repo;
@@ -170,14 +179,20 @@ class GravadorVerificacaoTest {
     // provider state: semeia o dado que o pact assume existir.
     @State("comprovante 7f3a... existe e está gravado")
     void semeiaComprovante() {
-        repo.save(new Comprovante(
-            UUID.fromString("7f3a0e4c-1d2b-4c8a-9f01-2a3b4c5d6e7f"),
-            new Dinheiro(new BigDecimal("150.00"), "BRL"),
-            new ChavePix(TipoChave.EMAIL, "joao@pix.com"),
-            StatusComprovante.GRAVADO));
+        if (repo.existsById(EXISTENTE)) {
+            return;
+        }
+        Comprovante comprovante = Comprovante.aPartirDe(new GravarComprovanteCommand(EXISTENTE,
+                new ComprovanteRequest("João", TipoDocumento.CPF, "50329291076", "2022", "00276", "0",
+                        new BigDecimal("150.00"), TipoChave.EMAIL, "joao@pix.com",
+                        "Maria", "E00000000202610211500", LocalDateTime.parse("2026-10-21T15:00:00"))));
+        comprovante.marcarGravado();
+        repo.save(comprovante);
     }
 }
 ```
+
+O `@Consumer("comprovante-consulta")` filtra os pacts deste consumidor: a pasta `pacts` também guarda os message pacts (seção 8), que esta verificação HTTP não deve tentar reproduzir.
 
 Se alguém no gravador renomear `valor` para `valorTransacao`, `verificaContrato` falha com uma mensagem precisa ("esperado campo `valor`, não encontrado") — no CI do gravador, no commit que causou o problema. A quebra de produção virou um build vermelho.
 
@@ -221,19 +236,27 @@ O PACT cobre isso com **message pacts**: em vez de requisição/resposta HTTP, o
 
 ```java
 // notificacao (consumer da mensagem): declara o contrato do evento ComprovanteGravado.
+/** Instante em ISO-8601 (UTC), com ou sem fração de segundo: é como o gravador o publica. */
+private static final String ISO_INSTANT = "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z";
+
 @Pact(consumer = "comprovante-notificacao")
 MessagePact eventoGravado(MessagePactBuilder builder) {
     return builder
         .expectsToReceive("evento de comprovante gravado")
         .withContent(new PactDslJsonBody()
             .uuid("comprovanteId")
-            .stringType("chavePix")
-            .datetime("gravadoEm"))
+            .stringType("chavePixDestino")
+            .numberType("valor")              // antifraude e BI, no mesmo módulo, usam o valor
+            .stringMatcher("gravadoEm", ISO_INSTANT, "2026-10-21T18:00:00Z"))
         .toPact();
 }
 ```
 
+O `gravadoEm` usa `stringMatcher` com uma expressão ISO, e não `datetime`: o gravador publica o instante em ISO-8601 UTC, com fração de segundo variável, que o `datetime` com formato fixo não aceita.
+
 Assim a fronteira assíncrona — não só a REST — fica protegida no CI. Um message pact é o contrato do seu **tópico/fila**, e ele é tão verificável quanto o de um endpoint.
+
+O gabarito também tem o message pact do comando da fila (gravador ← emissor), `ComandoGravacaoContractTest`, que falha no build se o emissor e o gravador divergirem em snake_case/camelCase.
 
 ---
 

@@ -5,10 +5,13 @@
 #   ./chamadas.sh emitir [n]        # emite n comprovantes válidos (padrão 1) → 202 + id
 #   ./chamadas.sh invalido          # emite com agência de 3 dígitos → 400
 #   ./chamadas.sh consultar [id]    # GET na consulta (cache + gravador) → 200 ou 404
-#   ./chamadas.sh interno [id]      # GET direto no gravador (o contrato do PACT)
+#   ./chamadas.sh interno [id]      # GET direto no gravador, /comprovantes/{id} na 8082 (o contrato do PACT)
 #   ./chamadas.sh saude             # health dos 4 serviços
-#   ./chamadas.sh falha on|propaga|off   # gateway da notificação: falha engolida, falha propagada, normal
-#   ./chamadas.sh circuito          # estado do circuit breaker notificacao-gateway
+#   ./chamadas.sh falha on|off      # gateway da notificação fora (reenvio agendado + retry → DLT) ou normal
+#   ./chamadas.sh lento [ms]        # gateway lento (padrão 2000 ms), para o bulkhead
+#   ./chamadas.sh bulkhead [n]      # n chamadas simultâneas ao gateway (padrão 10): atendidas × recusadas
+#   ./chamadas.sh reatores          # BI, compliance, reenvios agendados e falhas permanentes (DLT)
+#   ./chamadas.sh circuito          # estado do circuit breaker gatewayNotificacao
 #   ./chamadas.sh rajada [n] [s]    # emite n comprovantes, um a cada s segundos (padrão 20 e 1)
 
 set -euo pipefail
@@ -41,12 +44,13 @@ corpo() {
 EOF
 }
 
-ultimo_id() { cat "$RUN_DIR/ultimo-id" 2>/dev/null || { echo "nenhum id emitido ainda" >&2; exit 1; }; }
+ultimo_id() { cat "$RUN_DIR/ultimo-id" 2>/dev/null || { echo "nenhum id emitido ainda (rode ./chamadas.sh emitir)" >&2; return 1; }; }
+id_ou_ultimo() { if [[ -n "${1:-}" ]]; then echo "$1"; else ultimo_id; fi; }
 
 emitir_um() {
     local resposta id
     resposta="$(curl -s -w '\n%{http_code}' -X POST "$EMISSOR/comprovantes" \
-        -H 'Content-Type: application/json' -d "$(corpo)")"
+        -H 'Content-Type: application/json' -d "$(corpo)" || true)"
     id="$(echo "$resposta" | head -1 | sed -nE 's/.*"identificador_comprovante":"([^"]+)".*/\1/p')"
     echo "HTTP $(echo "$resposta" | tail -1)  id=$id"
     [[ -n "$id" ]] && echo "$id" > "$RUN_DIR/ultimo-id"
@@ -60,9 +64,11 @@ case "${1:-}" in
         curl -s -w '\nHTTP %{http_code}\n' -X POST "$EMISSOR/comprovantes" \
             -H 'Content-Type: application/json' -d "$(corpo 001)" ;;
     consultar)
-        curl -s -w '\nHTTP %{http_code}\n' "$CONSULTA/comprovantes/${2:-$(ultimo_id)}" ;;
+        id="$(id_ou_ultimo "${2:-}")" || exit 1
+        curl -s -w '\nHTTP %{http_code}\n' "$CONSULTA/comprovantes/$id" ;;
     interno)
-        curl -s -w '\nHTTP %{http_code}\n' "$GRAVADOR/interno/comprovantes/${2:-$(ultimo_id)}" ;;
+        id="$(id_ou_ultimo "${2:-}")" || exit 1
+        curl -s -w '\nHTTP %{http_code}\n' "$GRAVADOR/comprovantes/$id" ;;
     saude)
         for alvo in "emissor $EMISSOR" "gravador $GRAVADOR" "consulta $CONSULTA" "notificacao $NOTIFICACAO"; do
             set -- $alvo
@@ -70,12 +76,17 @@ case "${1:-}" in
         done ;;
     falha)
         case "${2:-}" in
-            on) q="falhar=true&propagar=false" ;;
-            propaga) q="falhar=true&propagar=true" ;;
-            off) q="falhar=false&propagar=false" ;;
-            *) echo "use: falha on|propaga|off" >&2; exit 1 ;;
+            on) q="falhar=true" ;;
+            off) q="falhar=false&lentidao=0" ;;
+            *) echo "use: falha on|off" >&2; exit 1 ;;
         esac
         curl -s -X POST "$NOTIFICACAO/demo/gateway?$q"; echo ;;
+    lento)
+        curl -s -X POST "$NOTIFICACAO/demo/gateway?lentidao=${2:-2000}"; echo ;;
+    bulkhead)
+        curl -s -X POST "$NOTIFICACAO/demo/gateway/rajada?n=${2:-10}"; echo ;;
+    reatores)
+        curl -s "$NOTIFICACAO/demo/reatores"; echo ;;
     circuito)
         curl -s "$NOTIFICACAO/actuator/circuitbreakers" \
             | grep -oE '"(state|failureRate|bufferedCalls|failedCalls|notPermittedCalls)":"?[^,"]*' \
@@ -83,5 +94,5 @@ case "${1:-}" in
     rajada)
         for _ in $(seq 1 "${2:-20}"); do emitir_um || true; sleep "${3:-1}"; done ;;
     *)
-        sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+        awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; exit 1 ;;
 esac

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
  * deixa de ser REST e passa a ser consumo de fila.
  */
 @RestController
-@RequestMapping("/interno/comprovantes")
+@RequestMapping("/comprovantes")
 public class GravadorController {
 
     private final GravadorService gravador;

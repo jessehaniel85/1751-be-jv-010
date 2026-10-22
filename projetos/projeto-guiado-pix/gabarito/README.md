@@ -15,13 +15,17 @@ antes da aula e para **colar o incremento** se o live coding travar (rede do Tea
 | 5 | `aula-05/` | Topologia formal + retry + **DLQ** | `compile` ✅ |
 | 6 | `aula-06/` | Kafka: tópico de evento + módulo `comprovante-notificacao` | `compile` ✅ |
 | 7 | `aula-07/` | Resiliência: `@RetryableTopic` + circuit breaker (Resilience4j) | `compile` ✅ |
-| 8 | `aula-08/` | Contract testing (PACT) consulta↔gravador | `test-compile` ✅ |
+| 8 | `aula-08/` | Contract testing (PACT): HTTP consulta↔gravador e message pacts do evento e do comando | `mvn test`: 8 testes ✅ |
 
 Cada pasta tem um **`ESTADO.md`** descrevendo o que funciona naquele ponto e como rodar.
 
 > **Correção de 21/10/2026 (aulas 4 a 8):** o emissor publica o comando na fila em `snake_case` e o gravador
 > lia em `camelCase`; o id chegava nulo e todo comprovante ia para a DLQ (na aula 4, sem DLQ, ficava em laço).
 > O `MessagingConfig` do gravador agora lê a fila em `snake_case`. Detalhes em `aula-08/ESTADO.md`.
+
+> **Alinhamento ao material (21/10/2026, aulas 1 a 8):** o gabarito passou a seguir o código do material do aluno
+> (modelo `Comprovante` + `ChavePix` + `Dinheiro`, SAGA com `INVALIDADO`, `ConsultaComprovante`, `EmissorDeComprovante`,
+> retry por interceptor, antifraude/BI/compliance, bulkhead e rate limiter, message pacts). Detalhes no `ESTADO.md` de cada aula.
 
 > **Demo final em casa (com Docker):** a pasta [`demo/`](demo/) sobe o `aula-08` inteiro sobre os clusters de
 > RabbitMQ e Kafka, com scripts, chamadas curl e collection do Postman. Roteiro:
@@ -66,7 +70,7 @@ docker compose down -v               # ao terminar
 - Se um serviço tiver um *bean* que sobe o **broker embarcado** (Qpid/EmbeddedKafka) no código principal, ele deve estar anotado `@Profile("!plano-a-docker")` para não conflitar com os brokers reais.
 
 ## O que está verificado e o que não está
-- **Verificado:** todas as aulas **compilam** no perfil `plano-b-jvm` (aula 8 em `test-compile`).
+- **Verificado:** todas as aulas **compilam** no perfil `plano-b-jvm` (aula 8 também passa nos 8 testes de contrato, `mvn test`).
 - **Não verificado em runtime aqui:** o fluxo ponta a ponta das aulas 4–7 exige **broker no ar**
   (Qpid/EmbeddedKafka in-JVM). O código está correto e idiomático; subir os brokers depende de o
   **Nexus Caixa publicar os artefatos** (ver nota abaixo). Se faltarem, o tema cai no `plano-c-conceitual`.

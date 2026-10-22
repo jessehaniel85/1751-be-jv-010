@@ -1,37 +1,42 @@
 package br.com.caixa.pix.notificacao;
 
 import br.com.caixa.pix.contracts.ComprovanteGravadoEvent;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.retrytopic.DltStrategy;
+import org.springframework.kafka.retrytopic.TopicSuffixingStrategy;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 
 /**
- * Aula 7 — consumo resiliente: @RetryableTopic cria tópicos de retry com backoff e,
- * esgotadas as tentativas, encaminha para a DLT. A chamada externa tem circuit breaker.
+ * Aula 7 — consumo resiliente: @RetryableTopic faz o retry NÃO-bloqueante em tópicos auxiliares,
+ * com backoff exponencial e jitter (random); esgotadas as tentativas, o evento vai para a DLT.
  */
 @Component
 public class NotificacaoListener {
 
-    private static final Logger log = LoggerFactory.getLogger(NotificacaoListener.class);
+    private final NotificacaoService notificacaoService;
+    private final AlertaService alertaService;
 
-    private final NotificacaoGateway gateway;
-
-    public NotificacaoListener(NotificacaoGateway gateway) {
-        this.gateway = gateway;
+    public NotificacaoListener(NotificacaoService notificacaoService, AlertaService alertaService) {
+        this.notificacaoService = notificacaoService;
+        this.alertaService = alertaService;
     }
 
-    @RetryableTopic(attempts = "4", backoff = @Backoff(delay = 1000, multiplier = 2.0))
+    @RetryableTopic(
+            attempts = "4",                                                 // 1 original + 3 retries
+            backoff = @Backoff(delay = 1000, multiplier = 2.0, random = true), // ~1s, 2s, 4s, com jitter
+            topicSuffixingStrategy = TopicSuffixingStrategy.SUFFIX_WITH_INDEX_VALUE, // -retry-0, -1, -2 (com jitter, o atraso não serve de nome)
+            dltStrategy = DltStrategy.FAIL_ON_ERROR)                         // esgotou → DLT
     @KafkaListener(topics = "comprovante-gravado", groupId = "notificacao")
-    public void aoGravar(ComprovanteGravadoEvent evento) {
-        gateway.enviar(evento);
+    public void aoGravar(ComprovanteGravadoEvent e) {
+        notificacaoService.avisar(e); // idempotente → retry seguro
     }
 
     @DltHandler
-    public void aoCairNaDlt(ComprovanteGravadoEvent evento) {
-        log.error("Comprovante {} caiu na DLT do tópico de notificação", evento.identificadorComprovante());
+    public void tratarDlt(ComprovanteGravadoEvent e) {
+        // teto de tentativas atingido: parar e pedir olhar humano
+        alertaService.notificarFalhaPermanente(e.comprovanteId());
     }
 }

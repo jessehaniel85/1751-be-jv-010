@@ -66,7 +66,7 @@ A configuração correta é **ack manual**: o consumidor confirma (**ack**) **s�
 - **nenhuma resposta + queda do consumidor:** o broker não recebeu ack, então **reentrega** (redelivery) a mensagem — para o mesmo ou outro consumidor.
 
 ```java
-@RabbitListener(queues = "comprovante.gravar.q", ackMode = "MANUAL")
+@RabbitListener(queues = "gravacao.q", ackMode = "MANUAL")
 public void aoReceber(GravarComprovanteCommand cmd, Channel canal,
                       @Header(AmqpHeaders.DELIVERY_TAG) long tag) throws IOException {
     try {
@@ -95,11 +95,13 @@ O **prefetch count** (configurado via `basic.qos`) limita **quantas mensagens n�
 ```java
 @Bean
 public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
-        ConnectionFactory connectionFactory) {
+        ConnectionFactory connectionFactory, MessageConverter jsonMessageConverter) {
     var factory = new SimpleRabbitListenerContainerFactory();
     factory.setConnectionFactory(connectionFactory);
+    factory.setMessageConverter(jsonMessageConverter);
     factory.setPrefetchCount(10);   // no máx. 10 mensagens in-flight por consumidor
     factory.setDefaultRequeueRejected(false); // exceção → dead-letter, não requeue infinito
+    factory.setAdviceChain(retryInterceptor());
     return factory;
 }
 ```
@@ -128,7 +130,10 @@ Com Spring AMQP isso se configura declarativamente, sem poluir o listener:
 @Bean
 public RetryOperationsInterceptor retryInterceptor() {
     return RetryInterceptorBuilder.stateless()
-            .maxAttempts(4)                                  // 1 original + 3 retries
+            .retryPolicy(new SimpleRetryPolicy(4,             // 1 original + 3 retries
+                    Map.of(AmqpRejectAndDontRequeueException.class, false,  // permanente: sem retry
+                           MessageConversionException.class, false),         // corpo ilegível também
+                    true, true))
             .backOffOptions(1000, 2.0, 10000)               // 1s, 2s, 4s... teto 10s
             .recoverer(new RejectAndDontRequeueRecoverer()) // esgotou → dead-letter
             .build();
@@ -136,6 +141,8 @@ public RetryOperationsInterceptor retryInterceptor() {
 ```
 
 O `RejectAndDontRequeueRecoverer` é a peça que liga o retry à DLQ: quando as tentativas se esgotam, ele faz `nack` com `requeue=false`, e **aí** o mecanismo de dead-lettering entra em ação. Sem ele, o default seria requeue infinito — o loop da poison message.
+
+O `SimpleRetryPolicy` classifica a `AmqpRejectAndDontRequeueException` (a falha permanente, seção 8) como **não-retentável**: sem esse mapa, o interceptor retentaria também a mensagem malformada e ela só chegaria à DLQ depois de esgotar o backoff.
 
 ---
 
@@ -154,20 +161,20 @@ O roteamento para a DLQ não é mágico: é o **mesmo** mecanismo de exchange/bi
 ```java
 @Bean
 public Queue gravacaoQueue() {
-    return QueueBuilder.durable("comprovante.gravar.q")
-            .withArgument("x-dead-letter-exchange", "comprovante.dlx")    // para onde mandar
+    return QueueBuilder.durable("gravacao.q")
+            .withArgument("x-dead-letter-exchange", "gravacao.dlx")    // para onde mandar
             .withArgument("x-dead-letter-routing-key", "comprovante.morto") // com que rótulo
             .build();
 }
 
 @Bean
 public Queue dlq() {
-    return QueueBuilder.durable("comprovante.gravar.dlq").build(); // a fila dos mortos
+    return QueueBuilder.durable("gravacao.dlq").build(); // a fila dos mortos
 }
 
 @Bean
 public DirectExchange deadLetterExchange() {
-    return new DirectExchange("comprovante.dlx");
+    return new DirectExchange("gravacao.dlx");
 }
 
 @Bean
@@ -204,22 +211,20 @@ O consumidor, que distingue os dois tipos de falha:
 @Component
 public class GravacaoListener {
 
-    private final ComprovanteRepository repositorio;
+    private final GravadorService gravador;
 
-    public GravacaoListener(ComprovanteRepository repositorio) {
-        this.repositorio = repositorio;
+    public GravacaoListener(GravadorService gravador) {
+        this.gravador = gravador;
     }
 
-    @RabbitListener(queues = "comprovante.gravar.q")
+    @RabbitListener(queues = "gravacao.q")
     public void aoReceber(GravarComprovanteCommand cmd) {
-        if (cmd.valor() == null || cmd.idComprovante() == null) {
+        if (cmd.identificadorComprovante() == null || cmd.dados() == null
+                || cmd.dados().valorTransacao() == null) {
             // falha PERMANENTE: nenhum retry vai consertar isto
             throw new AmqpRejectAndDontRequeueException("comprovante malformado");
         }
-        if (repositorio.existsById(cmd.idComprovante())) {
-            return; // idempotência sob redelivery
-        }
-        repositorio.save(mapear(cmd)); // pode lançar falha TRANSITÓRIA (banco) → retry
+        gravador.gravar(cmd); // idempotente sob redelivery; pode lançar falha TRANSITÓRIA → retry
     }
 }
 ```
@@ -232,8 +237,8 @@ A distinção está nos dois caminhos de exceção:
 **O roteiro do experimento** (o que você fará no studio):
 
 1. Publique um `GravarComprovanteCommand` **válido** → confirme que grava normalmente e dá ack.
-2. Publique um comando com `valor` nulo → observe que ele **não** fica em loop; vai **imediatamente** para `comprovante.gravar.dlq`.
-3. Abra a fila `comprovante.gravar.dlq` no **painel de management** do RabbitMQ → veja a mensagem **preservada**, com os headers `x-death` mostrando a origem e o motivo.
+2. Publique um comando com `valorTransacao` nulo → observe que ele **não** fica em loop; vai **imediatamente** para `gravacao.dlq`.
+3. Abra a fila `gravacao.dlq` no **painel de management** do RabbitMQ → veja a mensagem **preservada**, com os headers `x-death` mostrando a origem e o motivo.
 4. Publique outro comando **válido** logo depois do envenenado → confirme que ele **passa na frente**: a poison message **não bloqueou** a fila.
 
 Os passos 2 e 4 juntos são a prova que importa: a falha permanente foi **isolada** (não travou) e **preservada** (não sumiu). Essa é a definição operacional de "mensagem nunca some por acidente — ou foi processada, ou está numa DLQ por decisão".
